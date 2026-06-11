@@ -1,4 +1,4 @@
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = sb.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const errorLog = [];
 
@@ -538,7 +538,7 @@ async function showPlayerStandings() {
 
 async function cancelGame() {
     if (gameId) {
-        await supabase.from('games').delete().eq('id', gameId);
+        await sb.from('games').delete().eq('id', gameId);
     }
     resetQuiz();
 }
