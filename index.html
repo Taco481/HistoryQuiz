@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>History Quiz</title>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <nav id="top-nav">
+            <span class="logo">History Quiz</span>
+        </nav>
+
+        <!-- HOME -->
+        <section id="view-home" class="view active">
+            <div class="card">
+                <h2>Welkom bij de History Quiz!</h2>
+                <p>Test je geschiedeniskennis met vrienden.</p>
+                <button class="btn primary" onclick="showView('host')">Quiz Hosten</button>
+                <button class="btn secondary" onclick="showView('join')">Meedoen aan Quiz</button>
+            </div>
+        </section>
+
+        <!-- JOIN -->
+        <section id="view-join" class="view">
+            <div class="card">
+                <h2>Meedoen aan Quiz</h2>
+                <input type="text" id="join-name" placeholder="Jouw naam" maxlength="30">
+                <input type="text" id="join-code" placeholder="Quiz code" maxlength="6" style="text-transform:uppercase">
+                <button class="btn primary" onclick="joinGame()">Meedoen</button>
+                <button class="btn ghost" onclick="showView('home')">Terug</button>
+            </div>
+        </section>
+
+        <!-- HOST: Setup -->
+        <section id="view-host" class="view">
+            <div class="card" id="host-setup">
+                <h2>Quiz Host</h2>
+                <input type="text" id="host-name" placeholder="Jouw naam als host" maxlength="30">
+                <button class="btn primary" onclick="createGame()">Nieuwe Quiz Starten</button>
+                <button class="btn ghost" onclick="showView('home')">Terug</button>
+            </div>
+
+            <div class="card hidden" id="host-lobby">
+                <h2>Quiz Lobby</h2>
+                <p>Deel deze code met spelers:</p>
+                <div id="game-code-display"></div>
+                <div id="player-list"></div>
+                <div id="lobby-actions">
+                    <button class="btn primary" id="btn-start-game" onclick="startGame()">Start Quiz</button>
+                    <button class="btn ghost" onclick="cancelGame()">Annuleren</button>
+                </div>
+            </div>
+
+            <div class="card hidden" id="host-game">
+                <h2>Quiz Bezig</h2>
+                <div id="host-scoreboard"></div>
+                <div id="host-question-area">
+                    <p id="host-question-text"></p>
+                    <div id="host-options"></div>
+                </div>
+                <div id="host-controls">
+                    <p id="host-question-number"></p>
+                    <button class="btn primary" id="btn-next-question" onclick="nextQuestion()">Volgende Vraag</button>
+                    <button class="btn danger" id="btn-end-game" onclick="endGame()">Quiz Beëindigen</button>
+                </div>
+                <div id="host-answers-status"></div>
+            </div>
+
+            <div class="card hidden" id="host-result">
+                <h2>Eindstand</h2>
+                <div id="final-standings"></div>
+                <button class="btn primary" onclick="resetQuiz()">Nieuwe Quiz</button>
+            </div>
+        </section>
+
+        <!-- PLAYER -->
+        <section id="view-play" class="view">
+            <div class="card hidden" id="play-lobby">
+                <h2>Wachten op quiz...</h2>
+                <p id="play-waiting-msg"></p>
+            </div>
+
+            <div class="card hidden" id="play-question">
+                <h2 id="play-question-number"></h2>
+                <p id="play-question-text"></p>
+                <div id="play-options"></div>
+                <p id="play-feedback" class="hidden"></p>
+                <p id="play-score-display">Score: 0</p>
+            </div>
+
+            <div class="card hidden" id="play-result">
+                <h2>Quiz Voltooid!</h2>
+                <p id="play-final-score"></p>
+                <div id="play-standings"></div>
+            </div>
+        </section>
+    </div>
+
+    <button id="error-log-btn" onclick="toggleErrorLog()" title="Error Log">⚠</button>
+
+    <div id="error-log-modal" class="hidden">
+        <div id="error-log-header">
+            <span>Error Log</span>
+            <button onclick="toggleErrorLog()">✕</button>
+        </div>
+        <div id="error-log-list"></div>
+        <button id="error-log-clear" onclick="clearErrorLog()">Wis log</button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
