@@ -1,5 +1,3 @@
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
 const errorLog = [];
 
 function logError(description, error) {
@@ -26,6 +24,20 @@ function toggleErrorLog() {
 function clearErrorLog() {
     errorLog.length = 0;
     renderErrorLog();
+}
+
+let sb = null;
+let supabaseAvailable = false;
+
+try {
+    if (typeof supabase !== 'undefined' && supabase.createClient) {
+        sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        supabaseAvailable = true;
+    } else {
+        logError('Supabase', new Error('Supabase library niet geladen. Controleer je internetverbinding.'));
+    }
+} catch (e) {
+    logError('Supabase init', e);
 }
 
 const QUESTIONS = [
@@ -98,12 +110,12 @@ let playerName = null;
 let hostName = null;
 let currentQuestionIndex = 0;
 let playerAnswered = false;
-
 let supabaseChannel = null;
 
 function showView(viewId) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    document.getElementById('view-' + viewId).classList.add('active');
+    const el = document.getElementById('view-' + viewId);
+    if (el) el.classList.add('active');
 }
 
 function generateCode() {
@@ -116,6 +128,8 @@ function generateCode() {
 }
 
 async function createGame() {
+    if (!supabaseAvailable) { alert('Supabase is niet beschikbaar. Controleer de error log.'); return; }
+
     hostName = document.getElementById('host-name').value.trim();
     if (!hostName) { alert('Voer je naam in als host.'); return; }
 
@@ -155,6 +169,8 @@ async function createGame() {
 }
 
 async function joinGame() {
+    if (!supabaseAvailable) { alert('Supabase is niet beschikbaar. Controleer de error log.'); return; }
+
     playerName = document.getElementById('join-name').value.trim();
     const code = document.getElementById('join-code').value.trim().toUpperCase();
 
@@ -204,6 +220,7 @@ async function joinGame() {
 }
 
 function subscribeToGame() {
+    if (!sb) return;
     if (supabaseChannel) supabaseChannel.unsubscribe();
 
     const channelName = 'game-' + gameId + '-' + Date.now();
@@ -231,10 +248,8 @@ function subscribeToGame() {
 
 function handleGameChange(payload) {
     const game = payload.new;
-
     if (!game) return;
 
-    // Host view
     const hostLobby = document.getElementById('host-lobby');
     const hostGame = document.getElementById('host-game');
     const hostResult = document.getElementById('host-result');
@@ -251,7 +266,6 @@ function handleGameChange(payload) {
         showFinalStandings();
     }
 
-    // Player view
     if (game.status === 'active') {
         document.getElementById('play-lobby').classList.add('hidden');
         document.getElementById('play-question').classList.remove('hidden');
@@ -348,14 +362,14 @@ function showHostQuestion(index) {
     const q = QUESTIONS[index];
     if (!q) { endGame(); return; }
 
-    document.getElementById('host-question-number').textContent = `Vraag ${index + 1} van ${QUESTIONS.length}`;
+    document.getElementById('host-question-number').textContent = 'Vraag ' + (index + 1) + ' van ' + QUESTIONS.length;
     document.getElementById('host-question-text').textContent = q.question;
     document.getElementById('host-answers-status').innerHTML = '';
 
     const labels = ['A', 'B', 'C', 'D'];
     const optionsEl = document.getElementById('host-options');
     optionsEl.innerHTML = q.options.map((opt, i) =>
-        `<button class="option-btn" disabled>${labels[i]}. ${opt}</button>`
+        '<button class="option-btn" disabled>' + labels[i] + '. ' + opt + '</button>'
     ).join('');
 
     document.getElementById('btn-next-question').textContent =
@@ -368,7 +382,7 @@ async function showPlayerQuestion(index) {
 
     playerAnswered = false;
 
-    document.getElementById('play-question-number').textContent = `Vraag ${index + 1} van ${QUESTIONS.length}`;
+    document.getElementById('play-question-number').textContent = 'Vraag ' + (index + 1) + ' van ' + QUESTIONS.length;
     document.getElementById('play-question-text').textContent = q.question;
     document.getElementById('play-feedback').classList.add('hidden');
     document.getElementById('play-feedback').textContent = '';
@@ -376,34 +390,36 @@ async function showPlayerQuestion(index) {
     const labels = ['A', 'B', 'C', 'D'];
     const optionsEl = document.getElementById('play-options');
     optionsEl.innerHTML = q.options.map((opt, i) =>
-        `<button class="option-btn" data-index="${i}" onclick="submitAnswer(${i})">${labels[i]}. ${opt}</button>`
+        '<button class="option-btn" data-index="' + i + '" onclick="submitAnswer(' + i + ')">' + labels[i] + '. ' + opt + '</button>'
     ).join('');
 
-    const { data: existing } = await sb
-        .from('answers')
-        .select('*')
-        .eq('game_id', gameId)
-        .eq('player_id', playerId)
-        .eq('question_index', index)
-        .maybeSingle();
+    if (sb) {
+        const { data: existing } = await sb
+            .from('answers')
+            .select('*')
+            .eq('game_id', gameId)
+            .eq('player_id', playerId)
+            .eq('question_index', index)
+            .maybeSingle();
 
-    if (existing) {
-        playerAnswered = true;
-        const buttons = optionsEl.querySelectorAll('.option-btn');
-        buttons.forEach((btn, i) => {
-            btn.disabled = true;
-            if (i === existing.answer) btn.classList.add(existing.correct ? 'correct' : 'wrong');
-            if (i === q.answer) btn.classList.add('correct');
-        });
-        document.getElementById('play-feedback').textContent = existing.correct ? '✔ Goed!' : '✘ Helaas, dat is niet correct.';
-        document.getElementById('play-feedback').className = existing.correct ? 'correct' : 'wrong';
+        if (existing) {
+            playerAnswered = true;
+            const buttons = optionsEl.querySelectorAll('.option-btn');
+            buttons.forEach(function(btn, i) {
+                btn.disabled = true;
+                if (i === existing.answer) btn.classList.add(existing.correct ? 'correct' : 'wrong');
+                if (i === q.answer) btn.classList.add('correct');
+            });
+            document.getElementById('play-feedback').textContent = existing.correct ? 'Goed!' : 'Helaas, dat is niet correct.';
+            document.getElementById('play-feedback').className = existing.correct ? 'correct' : 'wrong';
+        }
     }
 
     await updatePlayerScore();
 }
 
 async function submitAnswer(index) {
-    if (playerAnswered) return;
+    if (playerAnswered || !sb) return;
     playerAnswered = true;
 
     const q = QUESTIONS[currentQuestionIndex];
@@ -420,7 +436,7 @@ async function submitAnswer(index) {
             correct
         });
 
-    if (error) { console.error(error); return; }
+    if (error) { logError('Antwoord opslaan mislukt', error); return; }
 
     if (correct) {
         const { data: current, error: fetchErr } = await sb
@@ -439,14 +455,14 @@ async function submitAnswer(index) {
     }
 
     const buttons = document.getElementById('play-options').querySelectorAll('.option-btn');
-    buttons.forEach((btn, i) => {
+    buttons.forEach(function(btn, i) {
         btn.disabled = true;
         if (i === index) btn.classList.add(correct ? 'correct' : 'wrong');
         if (i === q.answer) btn.classList.add('correct');
     });
 
     const feedback = document.getElementById('play-feedback');
-    feedback.textContent = correct ? '✔ Goed! +10 punten' : `✘ Het juiste antwoord was: ${q.options[q.answer]}`;
+    feedback.textContent = correct ? 'Goed! +10 punten' : 'Het juiste antwoord was: ' + q.options[q.answer];
     feedback.className = correct ? 'correct' : 'wrong';
     feedback.classList.remove('hidden');
 
@@ -454,6 +470,7 @@ async function submitAnswer(index) {
 }
 
 async function updatePlayerScore() {
+    if (!sb) return;
     const { data: player } = await sb
         .from('players')
         .select('score')
@@ -491,7 +508,7 @@ async function endGame() {
         .update({ status: 'finished' })
         .eq('id', gameId);
 
-    if (error) console.error(error);
+    if (error) logError('Beëindigen quiz mislukt', error);
 }
 
 async function showFinalStandings() {
@@ -504,13 +521,13 @@ async function showFinalStandings() {
     if (!players) return;
 
     const el = document.getElementById('final-standings');
-    el.innerHTML = players.map((p, i) =>
-        `<div class="standing-row">
-            <span class="rank">#${i + 1}</span>
-            <span class="name">${p.name.replace(' (host)', '')}</span>
-            <span class="score">${p.score} pts</span>
-        </div>`
-    ).join('');
+    el.innerHTML = players.map(function(p, i) {
+        return '<div class="standing-row">' +
+            '<span class="rank">#' + (i + 1) + '</span>' +
+            '<span class="name">' + p.name.replace(' (host)', '') + '</span>' +
+            '<span class="score">' + p.score + ' pts</span>' +
+        '</div>';
+    }).join('');
 }
 
 async function showPlayerStandings() {
@@ -522,22 +539,22 @@ async function showPlayerStandings() {
 
     if (!players) return;
 
-    const myScore = players.find(p => p.id === playerId);
+    const myScore = players.find(function(p) { return p.id === playerId; });
     document.getElementById('play-final-score').textContent =
-        myScore ? `Jouw score: ${myScore.score} punten` : 'Quiz afgelopen!';
+        myScore ? 'Jouw score: ' + myScore.score + ' punten' : 'Quiz afgelopen!';
 
     const el = document.getElementById('play-standings');
-    el.innerHTML = players.map((p, i) =>
-        `<div class="standing-row">
-            <span class="rank">#${i + 1}</span>
-            <span class="name">${p.name.replace(' (host)', '')}</span>
-            <span class="score">${p.score} pts</span>
-        </div>`
-    ).join('');
+    el.innerHTML = players.map(function(p, i) {
+        return '<div class="standing-row">' +
+            '<span class="rank">#' + (i + 1) + '</span>' +
+            '<span class="name">' + p.name.replace(' (host)', '') + '</span>' +
+            '<span class="score">' + p.score + ' pts</span>' +
+        '</div>';
+    }).join('');
 }
 
 async function cancelGame() {
-    if (gameId) {
+    if (gameId && sb) {
         await sb.from('games').delete().eq('id', gameId);
     }
     resetQuiz();
@@ -557,3 +574,5 @@ function resetQuiz() {
     document.getElementById('host-result').classList.add('hidden');
     showView('home');
 }
+
+logError('App geladen', new Error('supabaseAvailable=' + supabaseAvailable + ', sb=' + (sb ? 'ok' : 'null')));
