@@ -122,7 +122,7 @@ async function createGame() {
     const code = generateCode();
 
     try {
-        const { data: game, error } = await supabase
+        const { data: game, error } = await sb
             .from('games')
             .insert({ code, status: 'waiting' })
             .select()
@@ -133,7 +133,7 @@ async function createGame() {
         gameId = game.id;
         gameCode = code;
 
-        const { data: player, error: pErr } = await supabase
+        const { data: player, error: pErr } = await sb
             .from('players')
             .insert({ game_id: gameId, name: hostName + ' (host)', score: 0 })
             .select()
@@ -162,7 +162,7 @@ async function joinGame() {
     if (!code || code.length !== 6) { alert('Voer een geldige 6-teken quiz code in.'); return; }
 
     try {
-        const { data: game, error } = await supabase
+        const { data: game, error } = await sb
             .from('games')
             .select('*')
             .eq('code', code)
@@ -175,7 +175,7 @@ async function joinGame() {
         gameId = game.id;
         gameCode = code;
 
-        const { data: player, error: pErr } = await supabase
+        const { data: player, error: pErr } = await sb
             .from('players')
             .insert({ game_id: gameId, name: playerName, score: 0 })
             .select()
@@ -208,7 +208,7 @@ function subscribeToGame() {
 
     const channelName = 'game-' + gameId + '-' + Date.now();
 
-    supabaseChannel = supabase
+    supabaseChannel = sb
         .channel(channelName)
         .on('postgres_changes',
             { event: '*', schema: 'public', table: 'games', filter: 'id=eq.' + gameId },
@@ -279,7 +279,7 @@ async function handleAnswerChange() {
 }
 
 async function updatePlayerList() {
-    const { data: players } = await supabase
+    const { data: players } = await sb
         .from('players')
         .select('*')
         .eq('game_id', gameId);
@@ -293,7 +293,7 @@ async function updatePlayerList() {
 }
 
 async function updateHostScoreboard() {
-    const { data: players } = await supabase
+    const { data: players } = await sb
         .from('players')
         .select('*')
         .eq('game_id', gameId)
@@ -311,12 +311,12 @@ async function updateAnswerStatus() {
     const el = document.getElementById('host-answers-status');
     if (!el) return;
 
-    const { data: players } = await supabase
+    const { data: players } = await sb
         .from('players')
         .select('*')
         .eq('game_id', gameId);
 
-    const { data: answers } = await supabase
+    const { data: answers } = await sb
         .from('answers')
         .select('*')
         .eq('game_id', gameId)
@@ -332,7 +332,7 @@ async function updateAnswerStatus() {
 
 async function startGame() {
     currentQuestionIndex = 0;
-    const { error } = await supabase
+    const { error } = await sb
         .from('games')
         .update({ status: 'active', current_question: 0 })
         .eq('id', gameId);
@@ -379,7 +379,7 @@ async function showPlayerQuestion(index) {
         `<button class="option-btn" data-index="${i}" onclick="submitAnswer(${i})">${labels[i]}. ${opt}</button>`
     ).join('');
 
-    const { data: existing } = await supabase
+    const { data: existing } = await sb
         .from('answers')
         .select('*')
         .eq('game_id', gameId)
@@ -410,7 +410,7 @@ async function submitAnswer(index) {
     const correct = index === q.answer;
     const points = correct ? 10 : 0;
 
-    const { error } = await supabase
+    const { error } = await sb
         .from('answers')
         .insert({
             game_id: gameId,
@@ -423,14 +423,14 @@ async function submitAnswer(index) {
     if (error) { console.error(error); return; }
 
     if (correct) {
-        const { data: current, error: fetchErr } = await supabase
+        const { data: current, error: fetchErr } = await sb
             .from('players')
             .select('score')
             .eq('id', playerId)
             .single();
         if (fetchErr) { logError('Score ophalen mislukt', fetchErr); }
         if (current) {
-            const { error: updateErr } = await supabase
+            const { error: updateErr } = await sb
                 .from('players')
                 .update({ score: current.score + points })
                 .eq('id', playerId);
@@ -454,7 +454,7 @@ async function submitAnswer(index) {
 }
 
 async function updatePlayerScore() {
-    const { data: player } = await supabase
+    const { data: player } = await sb
         .from('players')
         .select('score')
         .eq('id', playerId)
@@ -475,7 +475,7 @@ async function nextQuestion() {
 
     currentQuestionIndex = nextIndex;
 
-    const { error } = await supabase
+    const { error } = await sb
         .from('games')
         .update({ current_question: nextIndex })
         .eq('id', gameId);
@@ -486,7 +486,7 @@ async function nextQuestion() {
 }
 
 async function endGame() {
-    const { error } = await supabase
+    const { error } = await sb
         .from('games')
         .update({ status: 'finished' })
         .eq('id', gameId);
@@ -495,7 +495,7 @@ async function endGame() {
 }
 
 async function showFinalStandings() {
-    const { data: players } = await supabase
+    const { data: players } = await sb
         .from('players')
         .select('*')
         .eq('game_id', gameId)
@@ -514,7 +514,7 @@ async function showFinalStandings() {
 }
 
 async function showPlayerStandings() {
-    const { data: players } = await supabase
+    const { data: players } = await sb
         .from('players')
         .select('*')
         .eq('game_id', gameId)
