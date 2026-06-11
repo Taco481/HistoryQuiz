@@ -1,9 +1,13 @@
-Write-Host "History Quiz - Lokale server starten..." -ForegroundColor Green
-Write-Host "Open http://localhost:8080 in je browser" -ForegroundColor Cyan
-Write-Host "Druk op Ctrl+C om te stoppen" -ForegroundColor Yellow
-
 $port = 8080
 $prefix = "http://localhost:$port/"
+
+# URL ACL registreren (nodig voor HttpListener zonder admin rechten)
+$aclCmd = 'netsh http add urlacl url=' + $prefix + ' user="NT AUTHORITY\Authenticated Users" listen=yes'
+Invoke-Expression $aclCmd 2>$null | Out-Null
+
+Write-Host "History Quiz - Lokale server starten..." -ForegroundColor Green
+Write-Host "Open http://localhost:$port in je browser" -ForegroundColor Cyan
+Write-Host "Druk op Ctrl+C om te stoppen" -ForegroundColor Yellow
 
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add($prefix)
