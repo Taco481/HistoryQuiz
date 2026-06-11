@@ -1,4 +1,4 @@
-const sb = sb.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const errorLog = [];
 
