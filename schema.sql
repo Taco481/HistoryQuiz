@@ -1,10 +1,20 @@
 -- Voer dit uit in de Supabase SQL Editor
--- Let op: dit verwijdert bestaande data! Draai alleen op een lege/nieuwe database.
+-- Veilig om te draaien — migreert bestaande tabellen of maakt nieuwe aan.
 
 -- Enable pgcrypto voor wachtwoord hashing
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- GAMES
+-- ==================== MIGRATIE (bestaande profiles naar eigen auth) ====================
+DO $$ BEGIN
+  -- Voeg password_hash kolom toe als die nog niet bestaat
+  ALTER TABLE profiles ADD COLUMN IF NOT EXISTS password_hash TEXT;
+  -- Drop FK naar auth.users
+  ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey;
+  -- Zet DEFAULT op id (voor nieuwe inserts)
+  ALTER TABLE profiles ALTER COLUMN id SET DEFAULT gen_random_uuid();
+EXCEPTION WHEN undefined_table THEN null; END $$;
+
+-- ==================== GAMES ====================
 CREATE TABLE IF NOT EXISTS games (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   code VARCHAR(6) UNIQUE NOT NULL,
@@ -47,8 +57,7 @@ CREATE TABLE IF NOT EXISTS questions (
 );
 
 -- PROFILES (gebruikers, geen koppeling met auth.users meer)
-DROP TABLE IF EXISTS profiles CASCADE;
-CREATE TABLE profiles (
+CREATE TABLE IF NOT EXISTS profiles (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   username VARCHAR(50) UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
