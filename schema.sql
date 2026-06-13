@@ -147,27 +147,11 @@ DO $$ BEGIN
   CREATE POLICY "Allow all on user_skins" ON user_skins FOR ALL USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
--- REALTIME (alleen toevoegen als nog niet in publicatie)
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_rel pr JOIN pg_class c ON c.oid = pr.prrelid JOIN pg_publication p ON p.oid = pr.prpubid WHERE p.pubname = 'supabase_realtime' AND c.relname = 'questions') THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE questions;
-  END IF;
-END $$;
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_rel pr JOIN pg_class c ON c.oid = pr.prrelid JOIN pg_publication p ON p.oid = pr.prpubid WHERE p.pubname = 'supabase_realtime' AND c.relname = 'games') THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE games;
-  END IF;
-END $$;
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_rel pr JOIN pg_class c ON c.oid = pr.prrelid JOIN pg_publication p ON p.oid = pr.prpubid WHERE p.pubname = 'supabase_realtime' AND c.relname = 'players') THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE players;
-  END IF;
-END $$;
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_publication_rel pr JOIN pg_class c ON c.oid = pr.prrelid JOIN pg_publication p ON p.oid = pr.prpubid WHERE p.pubname = 'supabase_realtime' AND c.relname = 'answers') THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE answers;
-  END IF;
-END $$;
+-- REALTIME
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE questions; EXCEPTION WHEN OTHERS THEN null; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE games; EXCEPTION WHEN OTHERS THEN null; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE players; EXCEPTION WHEN OTHERS THEN null; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE answers; EXCEPTION WHEN OTHERS THEN null; END $$;
 
 -- SEED SKINS
 INSERT INTO skins (name, display_name, description, price, primary_color, bg_start, bg_end) VALUES
