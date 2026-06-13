@@ -49,26 +49,28 @@ function onQuestionTypeChange() {
 // ==================== AUTH ====================
 
 async function login() {
-    const email = document.getElementById('auth-email').value.trim();
+    const nickname = document.getElementById('auth-nickname').value.trim();
     const password = document.getElementById('auth-password').value;
-    if (!email || !password) { showAuthError('Vul e-mail en wachtwoord in.'); return; }
+    if (!nickname || !password) { showAuthError('Vul gebruikersnaam en wachtwoord in.'); return; }
     try {
+        const email = nickname.toLowerCase().replace(/\s+/g, '_') + '@hq.local';
         const { data, error } = await sb.auth.signInWithPassword({ email, password });
         if (error) { showAuthError(error.message); return; }
-        await onAuth(data.user);
+        await onAuth(data.user, nickname);
     } catch (e) { showAuthError('Fout bij inloggen.'); }
 }
 
 async function register() {
-    const email = document.getElementById('auth-email').value.trim();
+    const nickname = document.getElementById('auth-nickname').value.trim();
     const password = document.getElementById('auth-password').value;
-    if (!email || !password) { showAuthError('Vul e-mail en wachtwoord in.'); return; }
+    if (!nickname || !password) { showAuthError('Vul gebruikersnaam en wachtwoord in.'); return; }
     if (password.length < 6) { showAuthError('Wachtwoord moet minstens 6 tekens zijn.'); return; }
     try {
-        const { data, error } = await sb.auth.signUp({ email, password });
+        const email = nickname.toLowerCase().replace(/\s+/g, '_') + '@hq.local';
+        const { data, error } = await sb.auth.signUp({ email, password, options: { data: { username: nickname } } });
         if (error) { showAuthError(error.message); return; }
-        if (data?.user?.identities?.length === 0) { showAuthError('Dit e-mailadres is al geregistreerd.'); return; }
-        showAuthError('Account gemaakt! Check je e-mail om te bevestigen.', false);
+        if (data?.user?.identities?.length === 0) { showAuthError('Deze gebruikersnaam is al in gebruik.'); return; }
+        showAuthError('Account gemaakt! Je kunt nu inloggen.', false);
     } catch (e) { showAuthError('Fout bij registreren.'); }
 }
 
@@ -79,14 +81,15 @@ function showAuthError(msg, isError = true) {
     el.style.color = isError ? '#e74c3c' : '#2ecc71';
 }
 
-async function onAuth(user) {
+async function onAuth(user, nickname) {
     if (!user) return;
     currentUser = user;
     document.getElementById('user-bar').classList.remove('hidden');
-    document.getElementById('user-email').textContent = 'Ingelogd als ' + user.email;
     document.getElementById('login-btn-home').classList.add('hidden');
     showView('home');
     await loadProfile();
+    const name = nickname || currentUser?.profile?.username || user.email.split('@')[0];
+    document.getElementById('user-email').textContent = 'Ingelogd als ' + name;
     await applySkin();
     await loadSavedQuizzesSelect();
 }
