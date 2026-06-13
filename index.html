@@ -35,11 +35,15 @@
             </div>
         </section>
 
-        <!-- HOST: Setup -->
+        <!-- HOST -->
         <section id="view-host" class="view">
             <div class="card" id="host-setup">
                 <h2>Quiz Host</h2>
-                <input type="text" id="host-name" placeholder="Jouw naam als host" maxlength="30">
+                <input type="text" id="host-name" placeholder="Jouw naam" maxlength="30">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="host-participate" checked>
+                    Ik doe zelf ook mee als speler
+                </label>
                 <button class="btn primary" onclick="createGame()">Nieuwe Quiz Starten</button>
                 <button class="btn ghost" onclick="showView('home')">Terug</button>
             </div>
@@ -53,43 +57,70 @@
                 <div id="question-editor">
                     <h3>Vragen beheren</h3>
                     <div id="question-list"></div>
-                    <button class="btn secondary" id="btn-add-question" onclick="addQuestion()">+ Vraag Toevoegen</button>
+                    <button class="btn secondary" onclick="addQuestion()">+ Vraag Toevoegen</button>
 
                     <div id="question-form" class="hidden">
+                        <select id="q-type" onchange="onQuestionTypeChange()">
+                            <option value="multiple">Meerkeuze (A/B/C/D)</option>
+                            <option value="truefalse">Waar / Niet waar</option>
+                            <option value="open">Open vraag (zelf invullen)</option>
+                        </select>
                         <input type="text" id="q-text" placeholder="Vraag">
-                        <input type="text" id="q-opt0" placeholder="Optie A">
-                        <input type="text" id="q-opt1" placeholder="Optie B">
-                        <input type="text" id="q-opt2" placeholder="Optie C">
-                        <input type="text" id="q-opt3" placeholder="Optie D">
-                        <div id="q-answer-select">
-                            <label>Juiste antwoord:</label>
-                            <select id="q-answer">
-                                <option value="0">A</option>
-                                <option value="1">B</option>
-                                <option value="2">C</option>
-                                <option value="3">D</option>
-                            </select>
+
+                        <div id="q-options-group">
+                            <input type="text" id="q-opt0" placeholder="Optie A">
+                            <input type="text" id="q-opt1" placeholder="Optie B">
+                            <input type="text" id="q-opt2" placeholder="Optie C">
+                            <input type="text" id="q-opt3" placeholder="Optie D">
+                            <div id="q-answer-select">
+                                <label>Juiste antwoord:</label>
+                                <select id="q-answer">
+                                    <option value="0">A</option>
+                                    <option value="1">B</option>
+                                    <option value="2">C</option>
+                                    <option value="3">D</option>
+                                </select>
+                            </div>
                         </div>
+
+                        <div id="q-truefalse-group" class="hidden">
+                            <div id="q-answer-select">
+                                <label>Juiste antwoord:</label>
+                                <select id="q-tf-answer">
+                                    <option value="true">Waar</option>
+                                    <option value="false">Niet waar</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="q-open-group" class="hidden">
+                            <input type="text" id="q-open-answer" placeholder="Juiste antwoord (optioneel voor nakijken)">
+                        </div>
+
                         <button class="btn primary" onclick="saveQuestion()">Opslaan</button>
                         <button class="btn ghost" onclick="cancelQuestionEdit()">Annuleren</button>
                     </div>
                 </div>
 
                 <div id="lobby-actions">
-                    <button class="btn primary" id="btn-start-game" onclick="startGame()">Start Quiz</button>
+                    <button class="btn primary" onclick="startGame()">Start Quiz</button>
                     <button class="btn ghost" onclick="cancelGame()">Annuleren</button>
                 </div>
             </div>
 
             <div class="card hidden" id="host-game">
                 <h2>Quiz Bezig</h2>
-                <div id="host-scoreboard"></div>
+                <div id="host-leaderboard">
+                    <h3>Scorebord</h3>
+                    <div id="host-scoreboard"></div>
+                </div>
                 <div id="host-question-area">
+                    <p id="host-question-number"></p>
                     <p id="host-question-text"></p>
                     <div id="host-options"></div>
+                    <div id="host-open-answers" class="hidden"></div>
                 </div>
                 <div id="host-controls">
-                    <p id="host-question-number"></p>
                     <button class="btn primary" id="btn-next-question" onclick="nextQuestion()">Volgende Vraag</button>
                     <button class="btn danger" id="btn-end-game" onclick="endGame()">Quiz Beëindigen</button>
                 </div>
@@ -111,9 +142,13 @@
             </div>
 
             <div class="card hidden" id="play-question">
-                <h2 id="play-question-number"></h2>
+                <p id="play-question-number"></p>
                 <p id="play-question-text"></p>
                 <div id="play-options"></div>
+                <div id="play-open-input" class="hidden">
+                    <input type="text" id="play-open-answer" placeholder="Typ je antwoord...">
+                    <button class="btn primary" onclick="submitOpenAnswer()">Verzend</button>
+                </div>
                 <p id="play-feedback" class="hidden"></p>
                 <p id="play-score-display">Score: 0</p>
             </div>

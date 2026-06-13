@@ -4,9 +4,10 @@ CREATE TABLE questions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   game_id UUID REFERENCES games(id) ON DELETE CASCADE,
   question_index INT NOT NULL,
+  type VARCHAR(20) DEFAULT 'multiple' CHECK (type IN ('multiple', 'truefalse', 'open')),
   question TEXT NOT NULL,
-  options JSONB NOT NULL,
-  answer INT NOT NULL,
+  options JSONB,
+  answer TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
