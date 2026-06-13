@@ -22,12 +22,6 @@ let currentQuestionIndex = 0, playerAnswered = false, supabaseChannel = null;
 let questions = [], editingQuestionId = null, hostParticipates = true;
 let currentUser = null;
 
-function showView(id) {
-    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    const el = document.getElementById('view-'+id);
-    if (el) el.classList.add('active');
-}
-
 function goHome() {
     if (currentUser) document.getElementById('user-bar').classList.remove('hidden');
     showView('home');

@@ -678,25 +678,9 @@ hr { border: none; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 16px 
 
 /* Responsive */
 @media (max-width: 500px) {
-    #play-options, #host-options {
-        grid-template-columns: 1fr;
-    }
+    #play-options, #host-options { grid-template-columns: 1fr; }
     #skin-grid { grid-template-columns: 1fr; }
     #app { padding: 12px; }
     .card { padding: 20px; }
     #game-code-display { font-size: 2.2rem; letter-spacing: 8px; }
-}
-@media (max-width: 500px) {
-    #play-options, #host-options {
-        grid-template-columns: 1fr;
-    }
-
-    #app { padding: 12px; }
-
-    .card { padding: 20px; }
-
-    #game-code-display {
-        font-size: 2.2rem;
-        letter-spacing: 8px;
-    }
 }
