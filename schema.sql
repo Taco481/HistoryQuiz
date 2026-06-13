@@ -147,19 +147,19 @@ DO $$ BEGIN
   CREATE POLICY "Allow all on user_skins" ON user_skins FOR ALL USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
--- REALTIME
+-- REALTIME (publicatie-updates zijn idempotent gemaakt)
 DO $$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE questions;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
+EXCEPTION WHEN SQLSTATE '42710' THEN null; END $$;
 DO $$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE games;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
+EXCEPTION WHEN SQLSTATE '42710' THEN null; END $$;
 DO $$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE players;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
+EXCEPTION WHEN SQLSTATE '42710' THEN null; END $$;
 DO $$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE answers;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
+EXCEPTION WHEN SQLSTATE '42710' THEN null; END $$;
 
 -- SEED SKINS
 INSERT INTO skins (name, display_name, description, price, primary_color, bg_start, bg_end) VALUES
