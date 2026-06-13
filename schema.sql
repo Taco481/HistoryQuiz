@@ -14,6 +14,11 @@ DO $$ BEGIN
   ALTER TABLE profiles ALTER COLUMN id SET DEFAULT gen_random_uuid();
 EXCEPTION WHEN undefined_table THEN null; END $$;
 
+-- ==================== MIGRATIE (host_id toevoegen aan games) ====================
+DO $$ BEGIN
+  ALTER TABLE games ADD COLUMN IF NOT EXISTS host_id UUID;
+EXCEPTION WHEN undefined_table THEN null; END $$;
+
 -- ==================== GAMES ====================
 CREATE TABLE IF NOT EXISTS games (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
