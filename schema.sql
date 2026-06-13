@@ -172,7 +172,7 @@ DROP FUNCTION IF EXISTS login_user;
 CREATE OR REPLACE FUNCTION register_user(payload JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
-SECURITY DEFINER SET search_path = 'public, extensions'
+SECURITY DEFINER
 AS $$
 DECLARE
   v_user public.profiles%ROWTYPE;
@@ -182,7 +182,7 @@ BEGIN
   v_username := payload->>'username';
   v_password := payload->>'password';
   INSERT INTO public.profiles (username, password_hash, coins, selected_skin)
-  VALUES (v_username, crypt(v_password, gen_salt('bf')), 100, 'default')
+  VALUES (v_username, md5(v_password), 100, 'default')
   RETURNING * INTO v_user;
   RETURN jsonb_build_object(
     'id', v_user.id,
@@ -196,11 +196,10 @@ EXCEPTION
 END;
 $$;
 
--- INLOGGEN (enkel JSONB parameter)
 CREATE OR REPLACE FUNCTION login_user(payload JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
-SECURITY DEFINER SET search_path = 'public, extensions'
+SECURITY DEFINER
 AS $$
 DECLARE
   v_user public.profiles%ROWTYPE;
@@ -213,7 +212,7 @@ BEGIN
   IF v_user.id IS NULL THEN
     RETURN jsonb_build_object('error', 'Gebruiker niet gevonden');
   END IF;
-  IF v_user.password_hash = crypt(v_password, v_user.password_hash) THEN
+  IF v_user.password_hash = md5(v_password) THEN
     RETURN jsonb_build_object(
       'id', v_user.id,
       'username', v_user.username,
