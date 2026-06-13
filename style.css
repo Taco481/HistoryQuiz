@@ -608,6 +608,15 @@ input::placeholder { color: #666; }
     font-size: 0.85rem;
 }
 
+#user-email {
+    color: #aaa;
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+    white-space: nowrap;
+}
+
 #user-coins {
     color: #ffd700;
     font-weight: 600;

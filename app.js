@@ -23,7 +23,12 @@ let questions = [], editingQuestionId = null, hostParticipates = true;
 let currentUser = null;
 
 function goHome() {
-    if (currentUser) document.getElementById('user-bar').classList.remove('hidden');
+    if (currentUser) {
+        document.getElementById('user-bar').classList.remove('hidden');
+        document.getElementById('login-btn-home').classList.add('hidden');
+    } else {
+        document.getElementById('login-btn-home').classList.remove('hidden');
+    }
     showView('home');
 }
 
@@ -78,6 +83,8 @@ async function onAuth(user) {
     if (!user) return;
     currentUser = user;
     document.getElementById('user-bar').classList.remove('hidden');
+    document.getElementById('user-email').textContent = 'Ingelogd als ' + user.email;
+    document.getElementById('login-btn-home').classList.add('hidden');
     showView('home');
     await loadProfile();
     await applySkin();
@@ -98,6 +105,7 @@ async function logout() {
     await sb.auth.signOut();
     currentUser = null;
     document.getElementById('user-bar').classList.add('hidden');
+    document.getElementById('login-btn-home').classList.remove('hidden');
     showView('home');
 }
 

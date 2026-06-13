@@ -13,6 +13,7 @@
         <nav id="top-nav">
             <span class="logo">History Quiz</span>
             <div id="user-bar" class="hidden">
+                <span id="user-email"></span>
                 <span id="user-coins"></span>
                 <button class="btn ghost small" onclick="showView('shop')">Shop</button>
                 <button class="btn ghost small" onclick="logout()">Uitloggen</button>
@@ -27,7 +28,7 @@
                 <button class="btn primary" onclick="showView('host')">Quiz Hosten</button>
                 <button class="btn secondary" onclick="showView('join')">Meedoen aan Quiz</button>
                 <hr>
-                <button class="btn ghost" onclick="showView('login')">Inloggen / Registeren</button>
+                <button class="btn ghost" id="login-btn-home" onclick="showView('login')">Inloggen / Registeren</button>
             </div>
         </section>
 
@@ -40,7 +41,7 @@
                 <p id="auth-error" class="hidden" style="color:#e74c3c;font-size:0.9rem;"></p>
                 <button class="btn primary" onclick="login()">Inloggen</button>
                 <button class="btn secondary" onclick="register()">Account maken</button>
-                <button class="btn ghost" onclick="showView('home')">Terug</button>
+                <button class="btn ghost" onclick="goHome()">Terug</button>
             </div>
         </section>
 
