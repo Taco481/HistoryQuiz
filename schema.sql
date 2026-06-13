@@ -172,16 +172,16 @@ DROP FUNCTION IF EXISTS login_user;
 CREATE OR REPLACE FUNCTION register_user(payload JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
-SECURITY DEFINER SET search_path = ''
+SECURITY DEFINER SET search_path = 'public'
 AS $$
 DECLARE
-  v_user profiles;
+  v_user public.profiles%ROWTYPE;
   v_username TEXT;
   v_password TEXT;
 BEGIN
   v_username := payload->>'username';
   v_password := payload->>'password';
-  INSERT INTO profiles (username, password_hash, coins, selected_skin)
+  INSERT INTO public.profiles (username, password_hash, coins, selected_skin)
   VALUES (v_username, crypt(v_password, gen_salt('bf')), 100, 'default')
   RETURNING * INTO v_user;
   RETURN jsonb_build_object(
@@ -200,16 +200,16 @@ $$;
 CREATE OR REPLACE FUNCTION login_user(payload JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
-SECURITY DEFINER SET search_path = ''
+SECURITY DEFINER SET search_path = 'public'
 AS $$
 DECLARE
-  v_user profiles;
+  v_user public.profiles%ROWTYPE;
   v_username TEXT;
   v_password TEXT;
 BEGIN
   v_username := payload->>'username';
   v_password := payload->>'password';
-  SELECT * INTO v_user FROM profiles WHERE username = v_username;
+  SELECT * INTO v_user FROM public.profiles WHERE username = v_username;
   IF v_user.id IS NULL THEN
     RETURN jsonb_build_object('error', 'Gebruiker niet gevonden');
   END IF;
