@@ -165,6 +165,9 @@ ON CONFLICT (name) DO NOTHING;
 
 -- ==================== AUTH RPC's ====================
 
+DROP FUNCTION IF EXISTS register_user;
+DROP FUNCTION IF EXISTS login_user;
+
 -- REGISTREREN
 CREATE OR REPLACE FUNCTION register_user(p_username TEXT, p_password TEXT)
 RETURNS JSONB
