@@ -3,7 +3,6 @@ const errorLog = [];
 function logError(description, error) {
     const entry = { timestamp: new Date().toLocaleTimeString(), description, message: error?.message || String(error), details: error };
     errorLog.push(entry);
-    console.error(description, error);
     renderErrorLog();
 }
 
@@ -34,74 +33,11 @@ try {
         sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         supabaseAvailable = true;
     } else {
-        logError('Supabase', new Error('Supabase library niet geladen. Controleer je internetverbinding.'));
+        logError('Supabase', new Error('Supabase library niet geladen.'));
     }
 } catch (e) {
     logError('Supabase init', e);
 }
-
-const QUESTIONS = [
-    {
-        question: 'In welk jaar begon de Tweede Wereldoorlog?',
-        options: ['1937', '1938', '1939', '1940'],
-        answer: 2
-    },
-    {
-        question: 'Wie was de eerste president van de Verenigde Staten?',
-        options: ['Thomas Jefferson', 'George Washington', 'Abraham Lincoln', 'John Adams'],
-        answer: 1
-    },
-    {
-        question: 'Welke oude beschaving bouwde de piramides van Gizeh?',
-        options: ['Romeinen', 'Grieken', 'Egyptenaren', 'Babyloniërs'],
-        answer: 2
-    },
-    {
-        question: 'In welk jaar viel de Berlijnse Muur?',
-        options: ['1987', '1988', '1989', '1990'],
-        answer: 2
-    },
-    {
-        question: 'Wie ontdekte Amerika in 1492?',
-        options: ['Vasco da Gama', 'Ferdinand Magellaan', 'Christopher Columbus', 'Amerigo Vespucci'],
-        answer: 2
-    },
-    {
-        question: 'Welke Franse keizer werd verslagen bij Waterloo?',
-        options: ['Lodewijk XIV', 'Napoleon Bonaparte', 'Karel de Grote', 'Maximiliaan Robespierre'],
-        answer: 1
-    },
-    {
-        question: 'Wat was de naam van het schip waarmee de Pilgrim Fathers naar Amerika voeren?',
-        options: ['Santa Maria', 'Mayflower', 'Victoria', 'Endeavour'],
-        answer: 1
-    },
-    {
-        question: 'In welk jaar werd de Verenigde Naties opgericht?',
-        options: ['1942', '1945', '1948', '1950'],
-        answer: 1
-    },
-    {
-        question: 'Wie was de laatste farao van Egypte?',
-        options: ['Cleopatra VII', 'Nefertiti', 'Hatsjepsoet', 'Ramses II'],
-        answer: 0
-    },
-    {
-        question: 'Welke Romeinse keizer bouwde het Colosseum?',
-        options: ['Julius Caesar', 'Augustus', 'Vespasianus', 'Nero'],
-        answer: 2
-    },
-    {
-        question: 'In welk jaar landden de eerste mensen op de maan?',
-        options: ['1967', '1968', '1969', '1970'],
-        answer: 2
-    },
-    {
-        question: 'Wat was de hoofdstad van het Byzantijnse Rijk?',
-        options: ['Rome', 'Athene', 'Constantinopel', 'Alexandrië'],
-        answer: 2
-    }
-];
 
 let gameId = null;
 let playerId = null;
@@ -111,6 +47,8 @@ let hostName = null;
 let currentQuestionIndex = 0;
 let playerAnswered = false;
 let supabaseChannel = null;
+let questions = [];
+let editingQuestionId = null;
 
 function showView(viewId) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -153,23 +91,161 @@ async function createGame() {
             .select()
             .single();
 
-        if (pErr) { logError('Aanmaken host mislukt', pErr); alert('Fout bij aanmaken host: ' + pErr.message); return; }
+        if (pErr) { logError('Aanmaken host mislukt', pErr); return; }
 
         playerId = player.id;
 
         subscribeToGame();
+        await loadQuestions();
 
         document.getElementById('game-code-display').textContent = code;
         document.getElementById('host-setup').classList.add('hidden');
         document.getElementById('host-lobby').classList.remove('hidden');
     } catch (err) {
         logError('Onverwachte fout bij createGame', err);
-        alert('Er is een fout opgetreden. Zie error log voor details.');
+    }
+}
+
+async function loadQuestions() {
+    const { data: dbQuestions, error } = await sb
+        .from('questions')
+        .select('*')
+        .eq('game_id', gameId)
+        .order('question_index', { ascending: true });
+
+    if (error) { logError('Laden vragen mislukt', error); return; }
+
+    if (dbQuestions && dbQuestions.length > 0) {
+        questions = dbQuestions;
+    } else {
+        questions = [];
+    }
+
+    renderQuestionList();
+}
+
+function renderQuestionList() {
+    const list = document.getElementById('question-list');
+    if (!list) return;
+
+    if (questions.length === 0) {
+        list.innerHTML = '<p style="color:#666;font-size:0.9rem;text-align:center;padding:12px;">Nog geen vragen. Voeg er een toe!</p>';
+        return;
+    }
+
+    const labels = ['A', 'B', 'C', 'D'];
+    list.innerHTML = questions.map(function(q, i) {
+        const opts = q.options || [];
+        const preview = q.question.length > 40 ? q.question.substring(0, 40) + '...' : q.question;
+        return '<div class="question-card">' +
+            '<span class="q-preview"><strong>' + (i + 1) + '.</strong> ' + preview + ' (' + labels[q.answer] + ')</span>' +
+            '<span class="q-actions">' +
+                '<button onclick="editQuestion(\'' + q.id + '\')" title="Bewerk">✏️</button>' +
+                '<button onclick="deleteQuestion(\'' + q.id + '\')" title="Verwijder">🗑️</button>' +
+            '</span>' +
+        '</div>';
+    }).join('');
+}
+
+function addQuestion() {
+    editingQuestionId = null;
+    document.getElementById('q-text').value = '';
+    document.getElementById('q-opt0').value = '';
+    document.getElementById('q-opt1').value = '';
+    document.getElementById('q-opt2').value = '';
+    document.getElementById('q-opt3').value = '';
+    document.getElementById('q-answer').value = '0';
+    document.getElementById('question-form').classList.remove('hidden');
+}
+
+function editQuestion(id) {
+    const q = questions.find(function(x) { return x.id === id; });
+    if (!q) return;
+
+    editingQuestionId = id;
+    document.getElementById('q-text').value = q.question;
+    document.getElementById('q-opt0').value = q.options[0] || '';
+    document.getElementById('q-opt1').value = q.options[1] || '';
+    document.getElementById('q-opt2').value = q.options[2] || '';
+    document.getElementById('q-opt3').value = q.options[3] || '';
+    document.getElementById('q-answer').value = q.answer;
+    document.getElementById('question-form').classList.remove('hidden');
+}
+
+function cancelQuestionEdit() {
+    document.getElementById('question-form').classList.add('hidden');
+    editingQuestionId = null;
+}
+
+async function saveQuestion() {
+    const question = document.getElementById('q-text').value.trim();
+    const opt0 = document.getElementById('q-opt0').value.trim();
+    const opt1 = document.getElementById('q-opt1').value.trim();
+    const opt2 = document.getElementById('q-opt2').value.trim();
+    const opt3 = document.getElementById('q-opt3').value.trim();
+    const answer = parseInt(document.getElementById('q-answer').value);
+
+    if (!question || !opt0 || !opt1 || !opt2 || !opt3) {
+        alert('Vul alle velden in.'); return;
+    }
+
+    const options = [opt0, opt1, opt2, opt3];
+
+    if (editingQuestionId) {
+        const { error } = await sb
+            .from('questions')
+            .update({ question, options, answer })
+            .eq('id', editingQuestionId);
+
+        if (error) { logError('Opslaan vraag mislukt', error); alert('Fout bij opslaan.'); return; }
+    } else {
+        const nextIndex = questions.length;
+        const { error } = await sb
+            .from('questions')
+            .insert({
+                game_id: gameId,
+                question_index: nextIndex,
+                question,
+                options,
+                answer
+            });
+
+        if (error) { logError('Toevoegen vraag mislukt', error); alert('Fout bij toevoegen.'); return; }
+    }
+
+    document.getElementById('question-form').classList.add('hidden');
+    editingQuestionId = null;
+    await loadQuestions();
+}
+
+async function deleteQuestion(id) {
+    if (!confirm('Verwijder deze vraag?')) return;
+
+    const { error } = await sb.from('questions').delete().eq('id', id);
+    if (error) { logError('Verwijderen vraag mislukt', error); return; }
+
+    await loadQuestions();
+    await reindexQuestions();
+}
+
+async function reindexQuestions() {
+    const { data: remaining } = await sb
+        .from('questions')
+        .select('*')
+        .eq('game_id', gameId)
+        .order('created_at', { ascending: true });
+
+    if (!remaining) return;
+
+    for (let i = 0; i < remaining.length; i++) {
+        if (remaining[i].question_index !== i) {
+            await sb.from('questions').update({ question_index: i }).eq('id', remaining[i].id);
+        }
     }
 }
 
 async function joinGame() {
-    if (!supabaseAvailable) { alert('Supabase is niet beschikbaar. Controleer de error log.'); return; }
+    if (!supabaseAvailable) { alert('Supabase is niet beschikbaar.'); return; }
 
     playerName = document.getElementById('join-name').value.trim();
     const code = document.getElementById('join-code').value.trim().toUpperCase();
@@ -184,8 +260,7 @@ async function joinGame() {
             .eq('code', code)
             .single();
 
-        if (error || !game) { logError('Quiz zoeken mislukt', error || new Error('Geen quiz gevonden')); alert('Quiz niet gevonden. Controleer de code.'); return; }
-
+        if (error || !game) { alert('Quiz niet gevonden. Controleer de code.'); return; }
         if (game.status === 'finished') { alert('Deze quiz is al afgelopen.'); return; }
 
         gameId = game.id;
@@ -197,11 +272,12 @@ async function joinGame() {
             .select()
             .single();
 
-        if (pErr) { logError('Joinen mislukt', pErr); alert('Fout bij joinen: ' + pErr.message); return; }
+        if (pErr) { alert('Fout bij joinen: ' + pErr.message); return; }
 
         playerId = player.id;
 
         subscribeToGame();
+        await loadQuestions();
 
         showView('play');
         document.getElementById('play-lobby').classList.remove('hidden');
@@ -210,12 +286,11 @@ async function joinGame() {
         document.getElementById('play-waiting-msg').textContent = 'Wachten tot de host de quiz start...';
 
         if (game.status === 'active') {
-            currentQuestionIndex = game.current_question;
+            currentQuestionIndex = game.current_question || 0;
             showPlayerQuestion(currentQuestionIndex);
         }
     } catch (err) {
         logError('Onverwachte fout bij joinGame', err);
-        alert('Er is een fout opgetreden. Zie error log voor details.');
     }
 }
 
@@ -239,14 +314,14 @@ function subscribeToGame() {
             { event: '*', schema: 'public', table: 'answers', filter: 'game_id=eq.' + gameId },
             handleAnswerChange
         )
-        .subscribe((status, err) => {
+        .subscribe(function(status, err) {
             if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
                 logError('Realtime verbinding mislukt (' + status + ')', err);
             }
         });
 }
 
-function handleGameChange(payload) {
+async function handleGameChange(payload) {
     const game = payload.new;
     if (!game) return;
 
@@ -301,9 +376,9 @@ async function updatePlayerList() {
     if (!players) return;
 
     const list = document.getElementById('player-list');
-    list.innerHTML = players.map(p =>
-        `<span class="player-chip">${p.name.replace(' (host)', '')}</span>`
-    ).join('');
+    list.innerHTML = players.map(function(p) {
+        return '<span class="player-chip">' + p.name.replace(' (host)', '') + '</span>';
+    }).join('');
 }
 
 async function updateHostScoreboard() {
@@ -316,9 +391,9 @@ async function updateHostScoreboard() {
     if (!players) return;
 
     const board = document.getElementById('host-scoreboard');
-    board.innerHTML = players.map((p, i) =>
-        `<span class="score-chip">#${i + 1} ${p.name.replace(' (host)', '')}: ${p.score}</span>`
-    ).join('');
+    board.innerHTML = players.map(function(p, i) {
+        return '<span class="score-chip">#' + (i + 1) + ' ' + p.name.replace(' (host)', '') + ': ' + p.score + '</span>';
+    }).join('');
 }
 
 async function updateAnswerStatus() {
@@ -338,13 +413,20 @@ async function updateAnswerStatus() {
 
     if (!players || !answers) return;
 
-    el.innerHTML = players.map(p => {
-        const answered = answers.some(a => a.player_id === p.id);
-        return `<span class="player-answer-chip ${answered ? 'answered' : 'waiting'}">${p.name.replace(' (host)', '')} ${answered ? '✓' : '...'}</span>`;
+    el.innerHTML = players.map(function(p) {
+        const answered = answers.some(function(a) { return a.player_id === p.id; });
+        return '<span class="player-answer-chip ' + (answered ? 'answered' : 'waiting') + '">' +
+            p.name.replace(' (host)', '') + ' ' + (answered ? '✓' : '...') + '</span>';
     }).join('');
 }
 
 async function startGame() {
+    await loadQuestions();
+    if (questions.length === 0) {
+        alert('Voeg minstens 1 vraag toe voordat je de quiz start.');
+        return;
+    }
+
     currentQuestionIndex = 0;
     const { error } = await sb
         .from('games')
@@ -359,39 +441,39 @@ async function startGame() {
 }
 
 function showHostQuestion(index) {
-    const q = QUESTIONS[index];
-    if (!q) { endGame(); return; }
+    if (index >= questions.length) { endGame(); return; }
+    const q = questions[index];
 
-    document.getElementById('host-question-number').textContent = 'Vraag ' + (index + 1) + ' van ' + QUESTIONS.length;
+    document.getElementById('host-question-number').textContent = 'Vraag ' + (index + 1) + ' van ' + questions.length;
     document.getElementById('host-question-text').textContent = q.question;
     document.getElementById('host-answers-status').innerHTML = '';
 
     const labels = ['A', 'B', 'C', 'D'];
     const optionsEl = document.getElementById('host-options');
-    optionsEl.innerHTML = q.options.map((opt, i) =>
-        '<button class="option-btn" disabled>' + labels[i] + '. ' + opt + '</button>'
-    ).join('');
+    optionsEl.innerHTML = q.options.map(function(opt, i) {
+        return '<button class="option-btn" disabled>' + labels[i] + '. ' + opt + '</button>';
+    }).join('');
 
     document.getElementById('btn-next-question').textContent =
-        index < QUESTIONS.length - 1 ? 'Volgende Vraag' : 'Bekijk Resultaten';
+        index < questions.length - 1 ? 'Volgende Vraag' : 'Bekijk Resultaten';
 }
 
 async function showPlayerQuestion(index) {
-    const q = QUESTIONS[index];
-    if (!q) return;
+    if (index >= questions.length) return;
+    const q = questions[index];
 
     playerAnswered = false;
 
-    document.getElementById('play-question-number').textContent = 'Vraag ' + (index + 1) + ' van ' + QUESTIONS.length;
+    document.getElementById('play-question-number').textContent = 'Vraag ' + (index + 1) + ' van ' + questions.length;
     document.getElementById('play-question-text').textContent = q.question;
     document.getElementById('play-feedback').classList.add('hidden');
     document.getElementById('play-feedback').textContent = '';
 
     const labels = ['A', 'B', 'C', 'D'];
     const optionsEl = document.getElementById('play-options');
-    optionsEl.innerHTML = q.options.map((opt, i) =>
-        '<button class="option-btn" data-index="' + i + '" onclick="submitAnswer(' + i + ')">' + labels[i] + '. ' + opt + '</button>'
-    ).join('');
+    optionsEl.innerHTML = q.options.map(function(opt, i) {
+        return '<button class="option-btn" data-index="' + i + '" onclick="submitAnswer(' + i + ')">' + labels[i] + '. ' + opt + '</button>';
+    }).join('');
 
     if (sb) {
         const { data: existing } = await sb
@@ -420,9 +502,10 @@ async function showPlayerQuestion(index) {
 
 async function submitAnswer(index) {
     if (playerAnswered || !sb) return;
+    if (currentQuestionIndex >= questions.length) return;
     playerAnswered = true;
 
-    const q = QUESTIONS[currentQuestionIndex];
+    const q = questions[currentQuestionIndex];
     const correct = index === q.answer;
     const points = correct ? 10 : 0;
 
@@ -444,13 +527,8 @@ async function submitAnswer(index) {
             .select('score')
             .eq('id', playerId)
             .single();
-        if (fetchErr) { logError('Score ophalen mislukt', fetchErr); }
-        if (current) {
-            const { error: updateErr } = await sb
-                .from('players')
-                .update({ score: current.score + points })
-                .eq('id', playerId);
-            if (updateErr) { logError('Score updaten mislukt', updateErr); }
+        if (!fetchErr && current) {
+            await sb.from('players').update({ score: current.score + points }).eq('id', playerId);
         }
     }
 
@@ -485,7 +563,7 @@ async function updatePlayerScore() {
 async function nextQuestion() {
     const nextIndex = currentQuestionIndex + 1;
 
-    if (nextIndex >= QUESTIONS.length) {
+    if (nextIndex >= questions.length) {
         await endGame();
         return;
     }
@@ -567,6 +645,8 @@ function resetQuiz() {
     gameCode = null;
     currentQuestionIndex = 0;
     playerAnswered = false;
+    questions = [];
+    editingQuestionId = null;
 
     document.getElementById('host-setup').classList.remove('hidden');
     document.getElementById('host-lobby').classList.add('hidden');
@@ -574,5 +654,3 @@ function resetQuiz() {
     document.getElementById('host-result').classList.add('hidden');
     showView('home');
 }
-
-logError('App geladen', new Error('supabaseAvailable=' + supabaseAvailable + ', sb=' + (sb ? 'ok' : 'null')));

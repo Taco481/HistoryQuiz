@@ -49,6 +49,32 @@
                 <p>Deel deze code met spelers:</p>
                 <div id="game-code-display"></div>
                 <div id="player-list"></div>
+
+                <div id="question-editor">
+                    <h3>Vragen beheren</h3>
+                    <div id="question-list"></div>
+                    <button class="btn secondary" id="btn-add-question" onclick="addQuestion()">+ Vraag Toevoegen</button>
+
+                    <div id="question-form" class="hidden">
+                        <input type="text" id="q-text" placeholder="Vraag">
+                        <input type="text" id="q-opt0" placeholder="Optie A">
+                        <input type="text" id="q-opt1" placeholder="Optie B">
+                        <input type="text" id="q-opt2" placeholder="Optie C">
+                        <input type="text" id="q-opt3" placeholder="Optie D">
+                        <div id="q-answer-select">
+                            <label>Juiste antwoord:</label>
+                            <select id="q-answer">
+                                <option value="0">A</option>
+                                <option value="1">B</option>
+                                <option value="2">C</option>
+                                <option value="3">D</option>
+                            </select>
+                        </div>
+                        <button class="btn primary" onclick="saveQuestion()">Opslaan</button>
+                        <button class="btn ghost" onclick="cancelQuestionEdit()">Annuleren</button>
+                    </div>
+                </div>
+
                 <div id="lobby-actions">
                     <button class="btn primary" id="btn-start-game" onclick="startGame()">Start Quiz</button>
                     <button class="btn ghost" onclick="cancelGame()">Annuleren</button>
