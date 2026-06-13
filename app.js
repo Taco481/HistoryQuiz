@@ -1,145 +1,286 @@
 const errorLog = [];
-
-function logError(description, error) {
-    const entry = { timestamp: new Date().toLocaleTimeString(), description, message: error?.message || String(error), details: error };
-    errorLog.push(entry);
-    renderErrorLog();
-}
-
+function logError(d, e) { errorLog.push({timestamp:new Date().toLocaleTimeString(),d,m:e?.message||String(e)}); renderErrorLog(); }
 function renderErrorLog() {
     const list = document.getElementById('error-log-list');
     if (!list) return;
-    list.innerHTML = errorLog.map(e =>
-        `<div class="error-log-entry"><span class="timestamp">${e.timestamp}</span> ${e.description}: ${e.message}</div>`
-    ).join('');
+    list.innerHTML = errorLog.map(e => `<div class="error-log-entry"><span class="timestamp">${e.timestamp}</span> ${e.d}: ${e.m}</div>`).join('');
 }
-
-function toggleErrorLog() {
-    const modal = document.getElementById('error-log-modal');
-    modal.classList.toggle('hidden');
-    renderErrorLog();
-}
-
-function clearErrorLog() {
-    errorLog.length = 0;
-    renderErrorLog();
-}
+function toggleErrorLog() { document.getElementById('error-log-modal').classList.toggle('hidden'); renderErrorLog(); }
+function clearErrorLog() { errorLog.length = 0; renderErrorLog(); }
 
 let sb = null;
 let supabaseAvailable = false;
-
 try {
     if (typeof supabase !== 'undefined' && supabase.createClient) {
         sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         supabaseAvailable = true;
     }
-} catch (e) {
-    logError('Supabase init', e);
-}
+} catch (e) { logError('Supabase init', e); }
 
-let gameId = null;
-let playerId = null;
-let gameCode = null;
-let playerName = null;
-let hostName = null;
-let currentQuestionIndex = 0;
-let playerAnswered = false;
-let supabaseChannel = null;
-let questions = [];
-let editingQuestionId = null;
-let hostParticipates = true;
+let gameId = null, playerId = null, gameCode = null, playerName = null, hostName = null;
+let currentQuestionIndex = 0, playerAnswered = false, supabaseChannel = null;
+let questions = [], editingQuestionId = null, hostParticipates = true;
+let currentUser = null;
 
-function showView(viewId) {
+function showView(id) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    const el = document.getElementById('view-' + viewId);
+    const el = document.getElementById('view-'+id);
     if (el) el.classList.add('active');
 }
 
+function goHome() {
+    if (currentUser) document.getElementById('user-bar').classList.remove('hidden');
+    showView('home');
+}
+
 function generateCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = '';
-    for (let i = 0; i < 6; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return code;
+    const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let r = '';
+    for (let i = 0; i < 6; i++) r += c[Math.floor(Math.random()*c.length)];
+    return r;
 }
 
 function onQuestionTypeChange() {
-    const type = document.getElementById('q-type').value;
-    document.getElementById('q-options-group').classList.toggle('hidden', type !== 'multiple');
-    document.getElementById('q-truefalse-group').classList.toggle('hidden', type !== 'truefalse');
-    document.getElementById('q-open-group').classList.toggle('hidden', type !== 'open');
+    const t = document.getElementById('q-type').value;
+    document.getElementById('q-options-group').classList.toggle('hidden', t !== 'multiple');
+    document.getElementById('q-truefalse-group').classList.toggle('hidden', t !== 'truefalse');
+    document.getElementById('q-open-group').classList.toggle('hidden', t !== 'open');
 }
 
+// ==================== AUTH ====================
+
+async function login() {
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    if (!email || !password) { showAuthError('Vul e-mail en wachtwoord in.'); return; }
+    try {
+        const { data, error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) { showAuthError(error.message); return; }
+        await onAuth(data.user);
+    } catch (e) { showAuthError('Fout bij inloggen.'); }
+}
+
+async function register() {
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    if (!email || !password) { showAuthError('Vul e-mail en wachtwoord in.'); return; }
+    if (password.length < 6) { showAuthError('Wachtwoord moet minstens 6 tekens zijn.'); return; }
+    try {
+        const { data, error } = await sb.auth.signUp({ email, password });
+        if (error) { showAuthError(error.message); return; }
+        if (data?.user?.identities?.length === 0) { showAuthError('Dit e-mailadres is al geregistreerd.'); return; }
+        showAuthError('Account gemaakt! Check je e-mail om te bevestigen.', false);
+    } catch (e) { showAuthError('Fout bij registreren.'); }
+}
+
+function showAuthError(msg, isError = true) {
+    const el = document.getElementById('auth-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    el.style.color = isError ? '#e74c3c' : '#2ecc71';
+}
+
+async function onAuth(user) {
+    if (!user) return;
+    currentUser = user;
+    document.getElementById('user-bar').classList.remove('hidden');
+    showView('home');
+    await loadProfile();
+    await applySkin();
+    await loadSavedQuizzesSelect();
+}
+
+async function loadProfile() {
+    if (!currentUser) return;
+    const { data } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
+    if (data) {
+        currentUser.profile = data;
+        document.getElementById('user-coins').textContent = '🪙 ' + data.coins;
+        document.getElementById('shop-coins').textContent = 'Jouw coins: 🪙 ' + data.coins;
+    }
+}
+
+async function logout() {
+    await sb.auth.signOut();
+    currentUser = null;
+    document.getElementById('user-bar').classList.add('hidden');
+    showView('home');
+}
+
+// Check existing session on load
+(async function() {
+    if (!sb) return;
+    const { data: { session } } = await sb.auth.getSession();
+    if (session?.user) await onAuth(session.user);
+})();
+
+// ==================== SHOP ====================
+
+async function showView(id) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    const el = document.getElementById('view-'+id);
+    if (el) el.classList.add('active');
+    if (id === 'shop') await renderShop();
+}
+
+async function renderShop() {
+    if (!currentUser) { alert('Log eerst in.'); return; }
+    await loadProfile();
+
+    const { data: allSkins } = await sb.from('skins').select('*').order('price', { ascending: true });
+    const { data: owned } = await sb.from('user_skins').select('skin_id').eq('user_id', currentUser.id);
+
+    const ownedIds = owned ? owned.map(s => s.skin_id) : [];
+    const grid = document.getElementById('skin-grid');
+    grid.innerHTML = (allSkins || []).map(s => {
+        const isOwned = ownedIds.includes(s.id);
+        const isEquipped = currentUser.profile?.selected_skin === s.name;
+        return `<div class="skin-card ${isEquipped ? 'equipped' : isOwned ? 'owned' : ''}">
+            <div class="skin-preview" style="background:linear-gradient(135deg,${s.bg_start},${s.bg_end});border:2px solid ${s.primary_color};"></div>
+            <div class="skin-name">${s.display_name}</div>
+            <div class="skin-desc">${s.description}</div>
+            <div class="skin-price">🪙 ${s.price}</div>
+            ${isEquipped ? '<span style="color:#2ecc71;font-size:0.85rem;">✓ Uitgerust</span>'
+            : isOwned ? `<button class="btn primary small" onclick="equipSkin('${s.name}')">Uitrusten</button>`
+            : `<button class="btn secondary small" onclick="buySkin('${s.id}','${s.name}',${s.price})">Kopen</button>`}
+        </div>`;
+    }).join('');
+}
+
+async function buySkin(skinId, skinName, price) {
+    if (currentUser.profile.coins < price) { alert('Niet genoeg coins!'); return; }
+    const { error } = await sb.from('user_skins').insert({ user_id: currentUser.id, skin_id: skinId });
+    if (error) { logError('Kopen mislukt', error); alert('Fout bij kopen.'); return; }
+    await sb.from('profiles').update({ coins: currentUser.profile.coins - price }).eq('id', currentUser.id);
+    currentUser.profile.coins -= price;
+    await renderShop();
+}
+
+async function equipSkin(skinName) {
+    await sb.from('profiles').update({ selected_skin: skinName }).eq('id', currentUser.id);
+    currentUser.profile.selected_skin = skinName;
+    await applySkin();
+    await renderShop();
+}
+
+async function applySkin() {
+    const skinName = currentUser?.profile?.selected_skin || 'default';
+    const { data: skins } = await sb.from('skins').select('*').eq('name', skinName).limit(1);
+    if (!skins || !skins[0]) return;
+    const s = skins[0];
+    document.documentElement.style.setProperty('--primary', s.primary_color);
+    document.documentElement.style.setProperty('--bg-start', s.bg_start);
+    document.documentElement.style.setProperty('--bg-end', s.bg_end);
+    document.body.style.background = `linear-gradient(135deg, ${s.bg_start}, ${s.bg_end})`;
+}
+
+// ==================== SAVED QUIZZES ====================
+
+async function loadSavedQuizzesSelect() {
+    if (!currentUser) { document.getElementById('saved-quiz-select').classList.add('hidden'); return; }
+    const { data } = await sb.from('saved_quizzes').select('*').eq('user_id', currentUser.id).order('updated_at', { ascending: false });
+    const select = document.getElementById('load-quiz-select');
+    if (!data || data.length === 0) { document.getElementById('saved-quiz-select').classList.add('hidden'); return; }
+    document.getElementById('saved-quiz-select').classList.remove('hidden');
+    select.innerHTML = '<option value="">-- Kies een quiz --</option>' +
+        data.map(q => `<option value="${q.id}">${q.title}</option>`).join('');
+}
+
+async function onLoadQuizSelect() {
+    const id = document.getElementById('load-quiz-select').value;
+    document.getElementById('load-quiz-select').dataset.selectedId = id;
+}
+
+async function loadSavedQuiz() {
+    const id = document.getElementById('load-quiz-select').value;
+    if (!id) { alert('Selecteer een quiz.'); return; }
+
+    const { data: sq } = await sb.from('saved_questions').select('*').eq('quiz_id', id).order('question_index', { ascending: true });
+    if (!sq || sq.length === 0) { alert('Deze quiz heeft geen vragen.'); return; }
+
+    for (const q of sq) {
+        const { error } = await sb.from('questions').insert({
+            game_id: gameId, question_index: q.question_index,
+            type: q.type, question: q.question, options: q.options, answer: q.answer
+        });
+        if (error) { logError('Laden vraag mislukt', error); }
+    }
+    await loadQuestions();
+    alert(sq.length + ' vragen geladen!');
+}
+
+async function saveQuizTemplate() {
+    if (!currentUser) { alert('Log in om een quiz op te slaan.'); return; }
+    if (questions.length === 0) { alert('Voeg eerst vragen toe.'); return; }
+
+    const title = prompt('Geef een naam voor deze quiz:');
+    if (!title) return;
+
+    const { data: quiz, error } = await sb.from('saved_quizzes').insert({
+        user_id: currentUser.id, title
+    }).select().single();
+
+    if (error) { logError('Opslaan quiz mislukt', error); alert('Fout bij opslaan.'); return; }
+
+    for (let i = 0; i < questions.length; i++) {
+        const q = questions[i];
+        await sb.from('saved_questions').insert({
+            quiz_id: quiz.id, question_index: i,
+            type: q.type, question: q.question, options: q.options, answer: q.answer
+        });
+    }
+    alert('Quiz opgeslagen!');
+    await loadSavedQuizzesSelect();
+}
+
+// ==================== GAME ====================
+
 async function createGame() {
-    if (!supabaseAvailable) { alert('Supabase is niet beschikbaar.'); return; }
-
+    if (!supabaseAvailable) { alert('Supabase niet beschikbaar.'); return; }
     hostName = document.getElementById('host-name').value.trim();
-    if (!hostName) { alert('Voer je naam in als host.'); return; }
-
+    if (!hostName) { alert('Voer je naam in.'); return; }
     hostParticipates = document.getElementById('host-participate').checked;
     const code = generateCode();
 
     try {
-        const { data: game, error } = await sb.from('games').insert({ code, status: 'waiting' }).select().single();
-        if (error) { logError('Aanmaken quiz mislukt', error); alert('Fout: ' + error.message); return; }
-
-        gameId = game.id;
-        gameCode = code;
+        const { data: game, error } = await sb.from('games').insert({ code, status: 'waiting', host_id: currentUser?.id }).select().single();
+        if (error) { logError('Aanmaken mislukt', error); alert('Fout: '+error.message); return; }
+        gameId = game.id; gameCode = code;
 
         if (hostParticipates) {
-            const { data: player, error: pErr } = await sb.from('players').insert({ game_id: gameId, name: hostName, score: 0 }).select().single();
-            if (pErr) { logError('Aanmaken host-speler mislukt', pErr); }
-            else { playerId = player.id; }
+            const { data: p } = await sb.from('players').insert({ game_id: gameId, name: hostName, score: 0 }).select().single();
+            if (p) playerId = p.id;
         }
-
         subscribeToGame();
         await loadQuestions();
-
         document.getElementById('game-code-display').textContent = code;
         document.getElementById('host-setup').classList.add('hidden');
         document.getElementById('host-lobby').classList.remove('hidden');
-    } catch (err) {
-        logError('Onverwachte fout', err);
-    }
+        await loadSavedQuizzesSelect();
+    } catch (err) { logError('Fout', err); }
 }
 
 async function loadQuestions() {
     if (!sb) return;
-    const { data: dbQuestions, error } = await sb.from('questions').select('*').eq('game_id', gameId).order('question_index', { ascending: true });
-
-    if (error) { logError('Laden vragen mislukt', error); return; }
-    questions = dbQuestions || [];
+    const { data } = await sb.from('questions').select('*').eq('game_id', gameId).order('question_index', { ascending: true });
+    if (data) questions = data;
     renderQuestionList();
 }
 
 function renderQuestionList() {
     const list = document.getElementById('question-list');
     if (!list) return;
-
-    if (questions.length === 0) {
-        list.innerHTML = '<p style="color:#666;font-size:0.9rem;text-align:center;padding:12px;">Nog geen vragen. Voeg er een toe!</p>';
-        return;
-    }
-
-    const labels = { multiple: ['A','B','C','D'], truefalse: ['Waar','Niet waar'], open: [] };
-    list.innerHTML = questions.map(function(q, i) {
-        const preview = q.question.length > 35 ? q.question.substring(0, 35) + '...' : q.question;
-        let typeLabel = 'Meerkeuze';
-        if (q.type === 'truefalse') typeLabel = 'W/NW';
-        else if (q.type === 'open') typeLabel = 'Open';
-
-        let answerHint = '';
-        if (q.type === 'multiple') answerHint = ' (' + labels.multiple[q.answer] + ')';
-        else if (q.type === 'truefalse') answerHint = q.answer === 'true' ? ' (Waar)' : ' (Niet waar)';
-        else if (q.type === 'open') answerHint = q.answer ? '' : ' (zelf nakijken)';
-
-        return '<div class="question-card">' +
-            '<span class="q-preview"><strong>' + (i + 1) + '.</strong> [' + typeLabel + '] ' + preview + answerHint + '</span>' +
-            '<span class="q-actions">' +
-                '<button onclick="editQuestion(\'' + q.id + '\')" title="Bewerk">✏️</button>' +
-                '<button onclick="deleteQuestion(\'' + q.id + '\')" title="Verwijder">🗑️</button>' +
-            '</span></div>';
+    if (questions.length === 0) { list.innerHTML = '<p style="color:#666;font-size:0.9rem;text-align:center;padding:12px;">Nog geen vragen.</p>'; return; }
+    const map = { multiple:'M', truefalse:'W/NW', open:'Open' };
+    const labels = { multiple:['A','B','C','D'], truefalse:['Waar','Niet waar'], open:[] };
+    list.innerHTML = questions.map((q,i) => {
+        const p = q.question.length > 30 ? q.question.substring(0,30)+'...' : q.question;
+        let hint = '';
+        if (q.type === 'multiple') hint = ' ('+labels.multiple[parseInt(q.answer)]+')';
+        else if (q.type === 'truefalse') hint = q.answer === 'true' ? ' (Waar)' : ' (Niet waar)';
+        return '<div class="question-card"><span class="q-preview"><strong>'+(i+1)+'.</strong> ['+map[q.type]+'] '+p+hint+'</span>'+
+            '<span class="q-actions"><button onclick="editQuestion(\''+q.id+'\')">✏️</button>'+
+            '<button onclick="deleteQuestion(\''+q.id+'\')">🗑️</button></span></div>';
     }).join('');
 }
 
@@ -147,10 +288,7 @@ function addQuestion() {
     editingQuestionId = null;
     document.getElementById('q-type').value = 'multiple';
     document.getElementById('q-text').value = '';
-    document.getElementById('q-opt0').value = '';
-    document.getElementById('q-opt1').value = '';
-    document.getElementById('q-opt2').value = '';
-    document.getElementById('q-opt3').value = '';
+    ['q-opt0','q-opt1','q-opt2','q-opt3'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('q-answer').value = '0';
     document.getElementById('q-tf-answer').value = 'true';
     document.getElementById('q-open-answer').value = '';
@@ -159,70 +297,40 @@ function addQuestion() {
 }
 
 function editQuestion(id) {
-    const q = questions.find(function(x) { return x.id === id; });
+    const q = questions.find(x => x.id === id);
     if (!q) return;
-
     editingQuestionId = id;
     document.getElementById('q-type').value = q.type || 'multiple';
     document.getElementById('q-text').value = q.question;
-
     if (q.type === 'multiple') {
-        document.getElementById('q-opt0').value = q.options[0] || '';
-        document.getElementById('q-opt1').value = q.options[1] || '';
-        document.getElementById('q-opt2').value = q.options[2] || '';
-        document.getElementById('q-opt3').value = q.options[3] || '';
+        ['q-opt0','q-opt1','q-opt2','q-opt3'].forEach((id,i) => document.getElementById(id).value = q.options?.[i] || '');
         document.getElementById('q-answer').value = q.answer;
-    } else if (q.type === 'truefalse') {
-        document.getElementById('q-tf-answer').value = q.answer;
-    } else if (q.type === 'open') {
-        document.getElementById('q-open-answer').value = q.answer || '';
-    }
-
+    } else if (q.type === 'truefalse') document.getElementById('q-tf-answer').value = q.answer;
+    else if (q.type === 'open') document.getElementById('q-open-answer').value = q.answer || '';
     onQuestionTypeChange();
     document.getElementById('question-form').classList.remove('hidden');
 }
 
-function cancelQuestionEdit() {
-    document.getElementById('question-form').classList.add('hidden');
-    editingQuestionId = null;
-}
+function cancelQuestionEdit() { document.getElementById('question-form').classList.add('hidden'); editingQuestionId = null; }
 
 async function saveQuestion() {
     const type = document.getElementById('q-type').value;
     const question = document.getElementById('q-text').value.trim();
     if (!question) { alert('Voer een vraag in.'); return; }
-
-    let options = null;
-    let answer = '0';
-
+    let options = null, answer = '0';
     if (type === 'multiple') {
-        const opts = [
-            document.getElementById('q-opt0').value.trim(),
-            document.getElementById('q-opt1').value.trim(),
-            document.getElementById('q-opt2').value.trim(),
-            document.getElementById('q-opt3').value.trim()
-        ];
-        if (!opts[0] || !opts[1] || !opts[2] || !opts[3]) { alert('Vul alle 4 opties in.'); return; }
-        options = opts;
-        answer = document.getElementById('q-answer').value;
-    } else if (type === 'truefalse') {
-        options = ['Waar', 'Niet waar'];
-        answer = document.getElementById('q-tf-answer').value;
-    } else if (type === 'open') {
-        answer = document.getElementById('q-open-answer').value.trim() || '';
-    }
+        const opts = [0,1,2,3].map(i => document.getElementById('q-opt'+i).value.trim());
+        if (opts.some(o => !o)) { alert('Vul alle opties in.'); return; }
+        options = opts; answer = document.getElementById('q-answer').value;
+    } else if (type === 'truefalse') { options = ['Waar','Niet waar']; answer = document.getElementById('q-tf-answer').value; }
+    else { answer = document.getElementById('q-open-answer').value.trim() || ''; }
 
     const payload = { type, question, options, answer };
-
     if (editingQuestionId) {
-        const { error } = await sb.from('questions').update(payload).eq('id', editingQuestionId);
-        if (error) { logError('Opslaan mislukt', error); alert('Fout bij opslaan.'); return; }
+        await sb.from('questions').update(payload).eq('id', editingQuestionId);
     } else {
-        const nextIndex = questions.length;
-        const { error } = await sb.from('questions').insert({ game_id: gameId, question_index: nextIndex, ...payload });
-        if (error) { logError('Toevoegen mislukt', error); alert('Fout bij toevoegen.'); return; }
+        await sb.from('questions').insert({ game_id: gameId, question_index: questions.length, ...payload });
     }
-
     document.getElementById('question-form').classList.add('hidden');
     editingQuestionId = null;
     await loadQuestions();
@@ -230,206 +338,144 @@ async function saveQuestion() {
 
 async function deleteQuestion(id) {
     if (!confirm('Verwijder deze vraag?')) return;
-    const { error } = await sb.from('questions').delete().eq('id', id);
-    if (error) { logError('Verwijderen mislukt', error); return; }
+    await sb.from('questions').delete().eq('id', id);
     await loadQuestions();
-    await reindexQuestions();
-}
-
-async function reindexQuestions() {
-    const { data: remaining } = await sb.from('questions').select('id,question_index').eq('game_id', gameId).order('created_at', { ascending: true });
-    if (!remaining) return;
-    for (let i = 0; i < remaining.length; i++) {
-        if (remaining[i].question_index !== i) {
-            await sb.from('questions').update({ question_index: i }).eq('id', remaining[i].id);
-        }
-    }
+    const { data: r } = await sb.from('questions').select('id').eq('game_id', gameId).order('created_at');
+    if (r) for (let i=0;i<r.length;i++) await sb.from('questions').update({question_index:i}).eq('id',r[i].id);
 }
 
 async function joinGame() {
-    if (!supabaseAvailable) { alert('Supabase is niet beschikbaar.'); return; }
-
+    if (!supabaseAvailable) { alert('Supabase niet beschikbaar.'); return; }
     playerName = document.getElementById('join-name').value.trim();
     const code = document.getElementById('join-code').value.trim().toUpperCase();
-
     if (!playerName) { alert('Voer je naam in.'); return; }
-    if (!code || code.length !== 6) { alert('Voer een geldige 6-teken quiz code in.'); return; }
+    if (!code || code.length !== 6) { alert('Voer een geldige code in.'); return; }
 
-    try {
-        const { data: game, error } = await sb.from('games').select('*').eq('code', code).single();
-        if (error || !game) { alert('Quiz niet gevonden. Controleer de code.'); return; }
-        if (game.status === 'finished') { alert('Deze quiz is al afgelopen.'); return; }
+    const { data: game } = await sb.from('games').select('*').eq('code', code).single();
+    if (!game) { alert('Quiz niet gevonden.'); return; }
+    if (game.status === 'finished') { alert('Deze quiz is al afgelopen.'); return; }
+    gameId = game.id; gameCode = code;
 
-        gameId = game.id;
-        gameCode = code;
-
-        const { data: player, error: pErr } = await sb.from('players').insert({ game_id: gameId, name: playerName, score: 0 }).select().single();
-        if (pErr) { alert('Fout bij joinen: ' + pErr.message); return; }
-
-        playerId = player.id;
-        subscribeToGame();
-        await loadQuestions();
-
-        showView('play');
-        document.getElementById('play-lobby').classList.remove('hidden');
-        document.getElementById('play-question').classList.add('hidden');
-        document.getElementById('play-result').classList.add('hidden');
-        document.getElementById('play-waiting-msg').textContent = 'Wachten tot de host de quiz start...';
-
-        if (game.status === 'active') {
-            currentQuestionIndex = game.current_question || 0;
-            showPlayerQuestion(currentQuestionIndex);
-        }
-    } catch (err) {
-        logError('Onverwachte fout bij joinGame', err);
-    }
+    const { data: player } = await sb.from('players').insert({ game_id: gameId, name: playerName, score: 0 }).select().single();
+    if (!player) { alert('Fout bij joinen.'); return; }
+    playerId = player.id;
+    subscribeToGame();
+    await loadQuestions();
+    showView('play');
+    document.getElementById('play-lobby').classList.remove('hidden');
+    document.getElementById('play-question').classList.add('hidden');
+    document.getElementById('play-result').classList.add('hidden');
+    document.getElementById('play-waiting-msg').textContent = 'Wachten tot de host de quiz start...';
+    if (game.status === 'active') { currentQuestionIndex = game.current_question || 0; showPlayerQuestion(currentQuestionIndex); }
 }
 
 function subscribeToGame() {
     if (!sb) return;
     if (supabaseChannel) supabaseChannel.unsubscribe();
-
-    supabaseChannel = sb.channel('game-' + gameId + '-' + Date.now())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'games', filter: 'id=eq.' + gameId }, handleGameChange)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: 'game_id=eq.' + gameId }, handlePlayerChange)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: 'game_id=eq.' + gameId }, handleAnswerChange)
-        .subscribe(function(status, err) {
-            if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') logError('Realtime verbinding mislukt', err);
-        });
+    supabaseChannel = sb.channel('g-'+gameId+'-'+Date.now())
+        .on('postgres_changes',{event:'*',schema:'public',table:'games',filter:'id=eq.'+gameId},handleGameChange)
+        .on('postgres_changes',{event:'*',schema:'public',table:'players',filter:'game_id=eq.'+gameId},handlePlayerChange)
+        .on('postgres_changes',{event:'*',schema:'public',table:'answers',filter:'game_id=eq.'+gameId},handleAnswerChange)
+        .subscribe((s,e) => { if (s==='CHANNEL_ERROR'||s==='TIMED_OUT') logError('Realtime mislukt',e); });
 }
 
 function handleGameChange(payload) {
     const game = payload.new;
     if (!game) return;
-
     if (game.status === 'active') {
         currentQuestionIndex = game.current_question || 0;
         document.getElementById('host-lobby').classList.add('hidden');
         document.getElementById('play-lobby').classList.add('hidden');
         document.getElementById('play-question').classList.remove('hidden');
         document.getElementById('play-result').classList.add('hidden');
-
-        const hostGame = document.getElementById('host-game');
-        if (!hostGame.classList.contains('hidden')) showHostQuestion(currentQuestionIndex);
+        if (!document.getElementById('host-game').classList.contains('hidden')) showHostQuestion(currentQuestionIndex);
         showPlayerQuestion(currentQuestionIndex);
     }
-
     if (game.status === 'finished') {
         document.getElementById('host-lobby').classList.add('hidden');
         document.getElementById('host-game').classList.add('hidden');
         document.getElementById('host-result').classList.remove('hidden');
         document.getElementById('play-question').classList.add('hidden');
         document.getElementById('play-result').classList.remove('hidden');
-        showFinalStandings();
-        showPlayerStandings();
+        showFinalStandings(); showPlayerStandings();
+        if (game.host_id === currentUser?.id) awardHostCoins();
     }
 }
 
-async function handlePlayerChange() {
-    await updatePlayerList();
-    await updateLeaderboard();
-    await updateAnswerStatus();
+async function awardHostCoins() {
+    const { data: players } = await sb.from('players').select('*').eq('game_id', gameId);
+    const count = players ? players.length : 0;
+    if (count < 1) return;
+    const coins = count * 5;
+    const { data: prof } = await sb.from('profiles').select('coins').eq('id', currentUser.id).single();
+    if (prof) {
+        await sb.from('profiles').update({ coins: prof.coins + coins }).eq('id', currentUser.id);
+        const el = document.getElementById('earnings-msg');
+        el.textContent = '🎉 +' + coins + ' coins verdiend (' + count + ' spelers x 5)!';
+        el.classList.remove('hidden');
+        if (currentUser.profile) currentUser.profile.coins = prof.coins + coins;
+    }
 }
 
-async function handleAnswerChange() {
-    await updateAnswerStatus();
-    await updateLeaderboard();
-    await loadOpenAnswers();
-}
+async function handlePlayerChange() { await updatePlayerList(); await updateLeaderboard(); await updateAnswerStatus(); }
+async function handleAnswerChange() { await updateAnswerStatus(); await updateLeaderboard(); await loadOpenAnswers(); }
 
 async function updatePlayerList() {
-    const { data: players } = await sb.from('players').select('*').eq('game_id', gameId);
-    if (!players) return;
-    const list = document.getElementById('player-list');
-    list.innerHTML = players.map(function(p) { return '<span class="player-chip">' + p.name + '</span>'; }).join('');
+    const { data: p } = await sb.from('players').select('*').eq('game_id', gameId);
+    if (!p) return;
+    document.getElementById('player-list').innerHTML = p.map(x => '<span class="player-chip">'+x.name+'</span>').join('');
 }
 
 async function updateLeaderboard() {
-    const { data: players } = await sb.from('players').select('*').eq('game_id', gameId).order('score', { ascending: false });
-    if (!players) return;
-
+    const { data: p } = await sb.from('players').select('*').eq('game_id', gameId).order('score',{ascending:false});
+    if (!p) return;
     const board = document.getElementById('host-scoreboard');
     if (!board) return;
-
-    const hostGame = document.getElementById('host-game');
-    const isActive = !hostGame.classList.contains('hidden');
-
-    if (isActive) {
-        board.innerHTML = players.map(function(p, i) {
-            return '<div class="leaderboard-row">' +
-                '<span class="lb-rank">#' + (i + 1) + '</span>' +
-                '<span class="lb-name">' + p.name + '</span>' +
-                '<span class="lb-score">' + p.score + ' pts</span></div>';
-        }).join('');
-    } else {
-        board.innerHTML = players.map(function(p) {
-            return '<span class="score-chip">' + p.name + ': ' + p.score + '</span>';
-        }).join('');
-    }
+    const isActive = !document.getElementById('host-game').classList.contains('hidden');
+    board.innerHTML = isActive
+        ? p.map((x,i) => '<div class="leaderboard-row"><span class="lb-rank">#'+(i+1)+'</span><span class="lb-name">'+x.name+'</span><span class="lb-score">'+x.score+' pts</span></div>').join('')
+        : p.map(x => '<span class="score-chip">'+x.name+': '+x.score+'</span>').join('');
 }
 
 async function updateAnswerStatus() {
     const el = document.getElementById('host-answers-status');
     if (!el) return;
-
-    const { data: players } = await sb.from('players').select('*').eq('game_id', gameId);
-    const { data: answers } = await sb.from('answers').select('*').eq('game_id', gameId).eq('question_index', currentQuestionIndex);
-    if (!players || !answers) return;
-
-    el.innerHTML = players.map(function(p) {
-        const answered = answers.some(function(a) { return a.player_id === p.id; });
-        return '<span class="player-answer-chip ' + (answered ? 'answered' : 'waiting') + '">' + p.name + ' ' + (answered ? '✓' : '...') + '</span>';
-    }).join('');
+    const { data: pl } = await sb.from('players').select('*').eq('game_id', gameId);
+    const { data: an } = await sb.from('answers').select('*').eq('game_id', gameId).eq('question_index', currentQuestionIndex);
+    if (!pl || !an) return;
+    el.innerHTML = pl.map(p => '<span class="player-answer-chip '+(an.some(a=>a.player_id===p.id)?'answered':'waiting')+'">'+p.name+' '+(an.some(a=>a.player_id===p.id)?'✓':'...')+'</span>').join('');
 }
 
 async function loadOpenAnswers() {
-    const container = document.getElementById('host-open-answers');
-    if (!container || container.classList.contains('hidden')) return;
-
+    const c = document.getElementById('host-open-answers');
+    if (!c || c.classList.contains('hidden')) return;
     const q = questions[currentQuestionIndex];
     if (!q || q.type !== 'open') return;
-
-    const { data: players } = await sb.from('players').select('*').eq('game_id', gameId);
-    const { data: answers } = await sb.from('answers').select('*').eq('game_id', gameId).eq('question_index', currentQuestionIndex);
-
-    if (!players || !answers) return;
-
-    container.innerHTML = answers.map(function(a) {
-        const player = players.find(function(p) { return p.id === a.player_id; });
-        const name = player ? player.name : 'Onbekend';
-        const awarded = a.correct;
-        return '<div class="open-answer-card">' +
-            '<span class="oa-player">' + name + '</span>' +
-            '<span class="oa-text">' + a.answer + '</span>' +
-            '<button class="oa-correct-btn ' + (awarded ? 'awarded' : '') + '" onclick="awardOpenPoints(\'' + a.id + '\', ' + awarded + ')">' + (awarded ? '✓ ' : '') + 'Goedkeuren</button></div>';
-    }).join('') || '<p style="color:#666;font-size:0.9rem;">Nog geen antwoorden...</p>';
+    const { data: pl } = await sb.from('players').select('*').eq('game_id', gameId);
+    const { data: an } = await sb.from('answers').select('*').eq('game_id', gameId).eq('question_index', currentQuestionIndex);
+    if (!pl || !an) return;
+    c.innerHTML = an.map(a => {
+        const p = pl.find(x => x.id === a.player_id);
+        return '<div class="open-answer-card"><span class="oa-player">'+(p?.name||'?')+'</span><span class="oa-text">'+a.answer+'</span>'+
+            '<button class="oa-correct-btn '+(a.correct?'awarded':'')+'" onclick="awardOpenPoints(\''+a.id+'\','+a.correct+')">'+(a.correct?'✓ ':'')+'Goedkeuren</button></div>';
+    }).join('') || '<p style="color:#666;">Nog geen antwoorden...</p>';
 }
 
-async function awardOpenPoints(answerId, currentlyAwarded) {
-    const points = currentlyAwarded ? -10 : 10;
-
-    const { data: answer, error: aErr } = await sb.from('answers').select('*').eq('id', answerId).single();
-    if (aErr || !answer) return;
-
-    await sb.from('answers').update({ correct: !currentlyAwarded }).eq('id', answerId);
-
-    const { data: player } = await sb.from('players').select('score').eq('id', answer.player_id).single();
-    if (player) {
-        await sb.from('players').update({ score: Math.max(0, player.score + points) }).eq('id', answer.player_id);
-    }
-
-    await loadOpenAnswers();
-    await updateLeaderboard();
+async function awardOpenPoints(answerId, current) {
+    const pts = current ? -10 : 10;
+    const { data: an } = await sb.from('answers').select('*').eq('id', answerId).single();
+    if (!an) return;
+    await sb.from('answers').update({ correct: !current }).eq('id', answerId);
+    const { data: pl } = await sb.from('players').select('score').eq('id', an.player_id).single();
+    if (pl) await sb.from('players').update({ score: Math.max(0, pl.score + pts) }).eq('id', an.player_id);
+    await loadOpenAnswers(); await updateLeaderboard();
 }
 
 async function startGame() {
     await loadQuestions();
     if (questions.length === 0) { alert('Voeg minstens 1 vraag toe.'); return; }
-
     currentQuestionIndex = 0;
-    const { error } = await sb.from('games').update({ status: 'active', current_question: 0 }).eq('id', gameId);
-    if (error) { logError('Starten quiz mislukt', error); return; }
-
+    await sb.from('games').update({ status:'active', current_question:0 }).eq('id', gameId);
     document.getElementById('host-lobby').classList.add('hidden');
     document.getElementById('host-game').classList.remove('hidden');
     showHostQuestion(0);
@@ -438,188 +484,137 @@ async function startGame() {
 function showHostQuestion(index) {
     if (index >= questions.length) { endGame(); return; }
     const q = questions[index];
-
-    document.getElementById('host-question-number').textContent = 'Vraag ' + (index + 1) + ' van ' + questions.length;
+    document.getElementById('host-question-number').textContent = 'Vraag '+(index+1)+' van '+questions.length;
     document.getElementById('host-question-text').textContent = q.question;
     document.getElementById('host-answers-status').innerHTML = '';
 
-    const hostOptions = document.getElementById('host-options');
-    const hostOpen = document.getElementById('host-open-answers');
+    const ho = document.getElementById('host-options');
+    const ha = document.getElementById('host-open-answers');
 
     if (q.type === 'open') {
-        hostOptions.classList.add('hidden');
-        hostOptions.innerHTML = '';
-        hostOpen.classList.remove('hidden');
-        loadOpenAnswers();
+        ho.classList.add('hidden'); ho.innerHTML = '';
+        ha.classList.remove('hidden'); loadOpenAnswers();
     } else {
-        hostOpen.classList.add('hidden');
-        hostOpen.innerHTML = '';
-        hostOptions.classList.remove('hidden');
-
-        const labels = q.type === 'truefalse' ? ['Waar', 'Niet waar'] : ['A', 'B', 'C', 'D'];
-        hostOptions.innerHTML = (q.options || []).map(function(opt, i) {
-            return '<button class="option-btn" disabled>' + labels[i] + '. ' + opt + '</button>';
-        }).join('');
+        ha.classList.add('hidden'); ha.innerHTML = '';
+        ho.classList.remove('hidden');
+        const lbl = q.type === 'truefalse' ? ['Waar','Niet waar'] : ['A','B','C','D'];
+        ho.innerHTML = (q.options||[]).map((o,i) => '<button class="option-btn" disabled>'+lbl[i]+'. '+o+'</button>').join('');
     }
-
-    document.getElementById('btn-next-question').textContent = index < questions.length - 1 ? 'Volgende Vraag' : 'Bekijk Resultaten';
+    document.getElementById('btn-next-question').textContent = index < questions.length-1 ? 'Volgende Vraag' : 'Bekijk Resultaten';
 }
 
 async function showPlayerQuestion(index) {
     if (index >= questions.length) return;
     const q = questions[index];
-
     playerAnswered = false;
-    document.getElementById('play-question-number').textContent = 'Vraag ' + (index + 1) + ' van ' + questions.length;
+    document.getElementById('play-question-number').textContent = 'Vraag '+(index+1)+' van '+questions.length;
     document.getElementById('play-question-text').textContent = q.question;
     document.getElementById('play-feedback').classList.add('hidden');
     document.getElementById('play-feedback').textContent = '';
 
-    const playOptions = document.getElementById('play-options');
-    const playOpenInput = document.getElementById('play-open-input');
+    const po = document.getElementById('play-options');
+    const pi = document.getElementById('play-open-input');
 
     if (q.type === 'open') {
-        playOptions.classList.add('hidden');
-        playOptions.innerHTML = '';
-        playOpenInput.classList.remove('hidden');
-        document.getElementById('play-open-answer').value = '';
+        po.classList.add('hidden'); po.innerHTML = '';
+        pi.classList.remove('hidden'); document.getElementById('play-open-answer').value = '';
     } else {
-        playOpenInput.classList.add('hidden');
-        playOptions.classList.remove('hidden');
-
-        const labels = q.type === 'truefalse' ? ['Waar', 'Niet waar'] : ['A', 'B', 'C', 'D'];
-        const opts = q.options || [];
-        playOptions.innerHTML = opts.map(function(opt, i) {
-            return '<button class="option-btn" data-index="' + i + '" onclick="submitAnswer(' + i + ')">' + labels[i] + '. ' + opt + '</button>';
-        }).join('');
+        pi.classList.add('hidden'); po.classList.remove('hidden');
+        const lbl = q.type === 'truefalse' ? ['Waar','Niet waar'] : ['A','B','C','D'];
+        po.innerHTML = (q.options||[]).map((o,i) => '<button class="option-btn" data-index="'+i+'" onclick="submitAnswer('+i+')">'+lbl[i]+'. '+o+'</button>').join('');
     }
 
     if (sb) {
-        const { data: existing } = await sb.from('answers').select('*').eq('game_id', gameId).eq('player_id', playerId).eq('question_index', index).maybeSingle();
-        if (existing) {
+        const { data: ex } = await sb.from('answers').select('*').eq('game_id',gameId).eq('player_id',playerId).eq('question_index',index).maybeSingle();
+        if (ex) {
             playerAnswered = true;
             if (q.type === 'open') {
-                playOpenInput.classList.add('hidden');
-                const feedback = document.getElementById('play-feedback');
-                feedback.textContent = 'Je antwoord: "' + existing.answer + '"';
-                feedback.className = 'correct';
-                feedback.classList.remove('hidden');
+                pi.classList.add('hidden');
+                document.getElementById('play-feedback').textContent = 'Je antwoord: "'+ex.answer+'"';
+                document.getElementById('play-feedback').className = 'correct'; document.getElementById('play-feedback').classList.remove('hidden');
             } else {
-                const buttons = playOptions.querySelectorAll('.option-btn');
-                buttons.forEach(function(btn, i) {
-                    btn.disabled = true;
-                    if (i === parseInt(existing.answer)) btn.classList.add(existing.correct ? 'correct' : 'wrong');
-                    if (i === parseInt(q.answer)) btn.classList.add('correct');
+                document.querySelectorAll('#play-options .option-btn').forEach((b,i) => {
+                    b.disabled = true;
+                    if (i === parseInt(ex.answer)) b.classList.add(ex.correct ? 'correct':'wrong');
+                    if (i === parseInt(q.answer)) b.classList.add('correct');
                 });
-                document.getElementById('play-feedback').textContent = existing.correct ? 'Goed!' : 'Helaas, dat is niet correct.';
-                document.getElementById('play-feedback').className = existing.correct ? 'correct' : 'wrong';
+                document.getElementById('play-feedback').textContent = ex.correct ? 'Goed!' : 'Helaas.';
+                document.getElementById('play-feedback').className = ex.correct ? 'correct' : 'wrong';
             }
         }
     }
-
     await updatePlayerScore();
 }
 
 async function submitAnswer(index) {
     if (playerAnswered || !sb || currentQuestionIndex >= questions.length) return;
     playerAnswered = true;
-
     const q = questions[currentQuestionIndex];
     const correct = index === parseInt(q.answer);
-    const points = correct ? 10 : 0;
-
-    const { error } = await sb.from('answers').insert({
-        game_id: gameId, player_id: playerId, question_index: currentQuestionIndex,
-        answer: String(index), correct
-    });
-
-    if (error) { logError('Antwoord opslaan mislukt', error); return; }
-
+    const pts = correct ? 10 : 0;
+    await sb.from('answers').insert({ game_id:gameId, player_id:playerId, question_index:currentQuestionIndex, answer:String(index), correct });
     if (correct) {
-        const { data: current } = await sb.from('players').select('score').eq('id', playerId).single();
-        if (current) await sb.from('players').update({ score: current.score + points }).eq('id', playerId);
+        const { data: c } = await sb.from('players').select('score').eq('id',playerId).single();
+        if (c) await sb.from('players').update({ score: c.score + pts }).eq('id',playerId);
     }
-
-    const buttons = document.getElementById('play-options').querySelectorAll('.option-btn');
-    buttons.forEach(function(btn, i) {
-        btn.disabled = true;
-        if (i === index) btn.classList.add(correct ? 'correct' : 'wrong');
-        if (i === parseInt(q.answer)) btn.classList.add('correct');
+    document.querySelectorAll('#play-options .option-btn').forEach((b,i) => {
+        b.disabled = true;
+        if (i === index) b.classList.add(correct?'correct':'wrong');
+        if (i === parseInt(q.answer)) b.classList.add('correct');
     });
-
-    const feedback = document.getElementById('play-feedback');
-    feedback.textContent = correct ? 'Goed! +10 punten' : 'Het juiste antwoord was: ' + (q.options[parseInt(q.answer)] || q.answer);
-    feedback.className = correct ? 'correct' : 'wrong';
-    feedback.classList.remove('hidden');
-
+    document.getElementById('play-feedback').textContent = correct ? 'Goed! +10 punten' : 'Het antwoord was: '+(q.options?.[parseInt(q.answer)]||q.answer);
+    document.getElementById('play-feedback').className = correct ? 'correct' : 'wrong';
+    document.getElementById('play-feedback').classList.remove('hidden');
     await updatePlayerScore();
 }
 
 async function submitOpenAnswer() {
     if (playerAnswered || !sb) return;
-    const input = document.getElementById('play-open-answer');
-    const answer = input.value.trim();
-    if (!answer) { alert('Typ een antwoord.'); return; }
-
+    const inp = document.getElementById('play-open-answer');
+    const a = inp.value.trim();
+    if (!a) { alert('Typ een antwoord.'); return; }
     playerAnswered = true;
-    const q = questions[currentQuestionIndex];
-
-    await sb.from('answers').insert({
-        game_id: gameId, player_id: playerId, question_index: currentQuestionIndex,
-        answer: answer, correct: false
-    });
-
+    await sb.from('answers').insert({ game_id:gameId, player_id:playerId, question_index:currentQuestionIndex, answer:a, correct:false });
     document.getElementById('play-open-input').classList.add('hidden');
-    const feedback = document.getElementById('play-feedback');
-    feedback.textContent = 'Antwoord verzonden: "' + answer + '". De host beoordeelt het.';
-    feedback.className = 'correct';
-    feedback.classList.remove('hidden');
+    document.getElementById('play-feedback').textContent = 'Antwoord verzonden! De host beoordeelt het.';
+    document.getElementById('play-feedback').className = 'correct';
+    document.getElementById('play-feedback').classList.remove('hidden');
 }
 
 async function updatePlayerScore() {
     if (!sb) return;
-    const { data: player } = await sb.from('players').select('score').eq('id', playerId).single();
-    if (player) document.getElementById('play-score-display').textContent = 'Score: ' + player.score;
+    const { data: p } = await sb.from('players').select('score').eq('id',playerId).single();
+    if (p) document.getElementById('play-score-display').textContent = 'Score: '+p.score;
 }
 
 async function nextQuestion() {
-    const nextIndex = currentQuestionIndex + 1;
-    if (nextIndex >= questions.length) { await endGame(); return; }
-
-    currentQuestionIndex = nextIndex;
-    const { error } = await sb.from('games').update({ current_question: nextIndex }).eq('id', gameId);
-    if (!error) showHostQuestion(nextIndex);
+    const n = currentQuestionIndex + 1;
+    if (n >= questions.length) { await endGame(); return; }
+    currentQuestionIndex = n;
+    await sb.from('games').update({ current_question: n }).eq('id', gameId);
+    showHostQuestion(n);
 }
 
 async function endGame() {
-    await sb.from('games').update({ status: 'finished' }).eq('id', gameId);
+    await sb.from('games').update({ status:'finished' }).eq('id', gameId);
 }
 
 async function showFinalStandings() {
-    const { data: players } = await sb.from('players').select('*').eq('game_id', gameId).order('score', { ascending: false });
-    if (!players) return;
-
-    document.getElementById('final-standings').innerHTML = players.map(function(p, i) {
-        return '<div class="standing-row">' +
-            '<span class="rank">#' + (i + 1) + '</span>' +
-            '<span class="name">' + p.name + '</span>' +
-            '<span class="score">' + p.score + ' pts</span></div>';
-    }).join('');
+    const { data: p } = await sb.from('players').select('*').eq('game_id',gameId).order('score',{ascending:false});
+    if (!p) return;
+    document.getElementById('final-standings').innerHTML = p.map((x,i) =>
+        '<div class="standing-row"><span class="rank">#'+(i+1)+'</span><span class="name">'+x.name+'</span><span class="score">'+x.score+' pts</span></div>'
+    ).join('');
 }
 
 async function showPlayerStandings() {
-    const { data: players } = await sb.from('players').select('*').eq('game_id', gameId).order('score', { ascending: false });
-    if (!players) return;
-
-    const myScore = players.find(function(p) { return p.id === playerId; });
-    document.getElementById('play-final-score').textContent = myScore ? 'Jouw score: ' + myScore.score + ' punten' : 'Quiz afgelopen!';
-
-    document.getElementById('play-standings').innerHTML = players.map(function(p, i) {
-        return '<div class="standing-row">' +
-            '<span class="rank">#' + (i + 1) + '</span>' +
-            '<span class="name">' + p.name + '</span>' +
-            '<span class="score">' + p.score + ' pts</span></div>';
-    }).join('');
+    const { data: p } = await sb.from('players').select('*').eq('game_id',gameId).order('score',{ascending:false});
+    if (!p) return;
+    const me = p.find(x => x.id === playerId);
+    document.getElementById('play-final-score').textContent = me ? 'Jouw score: '+me.score+' punten' : 'Quiz afgelopen!';
+    document.getElementById('play-standings').innerHTML = p.map((x,i) =>
+        '<div class="standing-row"><span class="rank">#'+(i+1)+'</span><span class="name">'+x.name+'</span><span class="score">'+x.score+' pts</span></div>'
+    ).join('');
 }
 
 async function cancelGame() {
@@ -629,12 +624,11 @@ async function cancelGame() {
 
 function resetQuiz() {
     if (supabaseChannel) supabaseChannel.unsubscribe();
-    gameId = null; playerId = null; gameCode = null; currentQuestionIndex = 0;
-    playerAnswered = false; questions = []; editingQuestionId = null;
-
+    gameId=null; playerId=null; gameCode=null; currentQuestionIndex=0; playerAnswered=false; questions=[]; editingQuestionId=null;
     document.getElementById('host-setup').classList.remove('hidden');
     document.getElementById('host-lobby').classList.add('hidden');
     document.getElementById('host-game').classList.add('hidden');
     document.getElementById('host-result').classList.add('hidden');
+    document.getElementById('earnings-msg').classList.add('hidden');
     showView('home');
 }

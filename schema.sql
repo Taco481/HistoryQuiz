@@ -1,6 +1,34 @@
--- Voer dit uit in de Supabase SQL Editor (https://supabase.com/dashboard/project/jwhhckauahnhrhegddwj/sql/new)
+-- Voer dit uit in de Supabase SQL Editor
+-- Herhaal dit NIET als tabellen al bestaan (gebruik CREATE TABLE IF NOT EXISTS)
 
-CREATE TABLE questions (
+CREATE TABLE IF NOT EXISTS games (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  code VARCHAR(6) UNIQUE NOT NULL,
+  status VARCHAR(20) DEFAULT 'waiting' CHECK (status IN ('waiting', 'active', 'finished')),
+  host_id UUID,
+  current_question INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS players (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  game_id UUID REFERENCES games(id) ON DELETE CASCADE,
+  name VARCHAR(50) NOT NULL,
+  score INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS answers (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  game_id UUID REFERENCES games(id) ON DELETE CASCADE,
+  player_id UUID REFERENCES players(id) ON DELETE CASCADE,
+  question_index INT NOT NULL,
+  answer TEXT NOT NULL,
+  correct BOOLEAN NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS questions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   game_id UUID REFERENCES games(id) ON DELETE CASCADE,
   question_index INT NOT NULL,
@@ -11,44 +39,130 @@ CREATE TABLE questions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE games (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  code VARCHAR(6) UNIQUE NOT NULL,
-  status VARCHAR(20) DEFAULT 'waiting' CHECK (status IN ('waiting', 'active', 'finished')),
-  current_question INT DEFAULT 0,
+-- PROFILES (extends auth.users)
+CREATE TABLE IF NOT EXISTS profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  coins INT DEFAULT 100,
+  selected_skin VARCHAR(50) DEFAULT 'default',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE players (
+-- SAVED QUIZZES
+CREATE TABLE IF NOT EXISTS saved_quizzes (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  game_id UUID REFERENCES games(id) ON DELETE CASCADE,
-  name VARCHAR(50) NOT NULL,
-  score INT DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  title VARCHAR(100) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE answers (
+-- SAVED QUESTIONS
+CREATE TABLE IF NOT EXISTS saved_questions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  game_id UUID REFERENCES games(id) ON DELETE CASCADE,
-  player_id UUID REFERENCES players(id) ON DELETE CASCADE,
+  quiz_id UUID REFERENCES saved_quizzes(id) ON DELETE CASCADE NOT NULL,
   question_index INT NOT NULL,
-  answer VARCHAR(10) NOT NULL,
-  correct BOOLEAN NOT NULL,
+  type VARCHAR(20) DEFAULT 'multiple' CHECK (type IN ('multiple', 'truefalse', 'open')),
+  question TEXT NOT NULL,
+  options JSONB,
+  answer TEXT NOT NULL
+);
+
+-- SKINS
+CREATE TABLE IF NOT EXISTS skins (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name VARCHAR(50) UNIQUE NOT NULL,
+  display_name VARCHAR(100) NOT NULL,
+  description TEXT,
+  price INT NOT NULL,
+  primary_color VARCHAR(7) DEFAULT '#e94560',
+  bg_start VARCHAR(7) DEFAULT '#1a1a2e',
+  bg_end VARCHAR(7) DEFAULT '#0f3460',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- USER SKINS
+CREATE TABLE IF NOT EXISTS user_skins (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  skin_id UUID REFERENCES skins(id) ON DELETE CASCADE NOT NULL,
+  UNIQUE(user_id, skin_id)
+);
+
+-- RLS
 ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games ENABLE ROW LEVEL SECURITY;
 ALTER TABLE players ENABLE ROW LEVEL SECURITY;
 ALTER TABLE answers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE saved_quizzes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE saved_questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE skins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_skins ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow all on questions" ON questions FOR ALL USING (true) WITH CHECK (true);
+-- POLICIES (allow all for simplicity)
+DO $$ BEGIN
+  CREATE POLICY "Allow all on questions" ON questions FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on games" ON games FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on players" ON players FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on answers" ON answers FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on profiles" ON profiles FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on saved_quizzes" ON saved_quizzes FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on saved_questions" ON saved_questions FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on skins" ON skins FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN
+  CREATE POLICY "Allow all on user_skins" ON user_skins FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
-CREATE POLICY "Allow all on games" ON games FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all on players" ON players FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all on answers" ON answers FOR ALL USING (true) WITH CHECK (true);
-
+-- REALTIME
 ALTER PUBLICATION supabase_realtime ADD TABLE questions;
 ALTER PUBLICATION supabase_realtime ADD TABLE games;
 ALTER PUBLICATION supabase_realtime ADD TABLE players;
 ALTER PUBLICATION supabase_realtime ADD TABLE answers;
+
+-- SEED SKINS
+INSERT INTO skins (name, display_name, description, price, primary_color, bg_start, bg_end) VALUES
+('default', 'Standaard', 'De standaard rood-blauwe look', 0, '#e94560', '#1a1a2e', '#0f3460'),
+('ocean', 'Oceaan', 'Koel blauw thema', 50, '#00b4d8', '#03045e', '#0077b6'),
+('forest', 'Bos', 'Natuurlijk groen thema', 75, '#2d6a4f', '#081c15', '#1b4332'),
+('sunset', 'Zonsondergang', 'Warme paars-oranje look', 100, '#ff6b6b', '#2d1b69', '#e74c3d'),
+('midnight', 'Middernacht', 'Donker paars thema', 150, '#bb86fc', '#121212', '#3700b3'),
+('gold', 'Goud', 'Luxe gouden look', 200, '#ffd700', '#1a1a00', '#665d00')
+ON CONFLICT (name) DO NOTHING;
+
+-- AUTO-CREATE PROFILE ON SIGNUP
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, username, coins)
+  VALUES (
+    NEW.id,
+    COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
+    100
+  );
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();

@@ -12,6 +12,11 @@
     <div id="app">
         <nav id="top-nav">
             <span class="logo">History Quiz</span>
+            <div id="user-bar" class="hidden">
+                <span id="user-coins"></span>
+                <button class="btn ghost small" onclick="showView('shop')">Shop</button>
+                <button class="btn ghost small" onclick="logout()">Uitloggen</button>
+            </div>
         </nav>
 
         <!-- HOME -->
@@ -21,6 +26,31 @@
                 <p>Test je geschiedeniskennis met vrienden.</p>
                 <button class="btn primary" onclick="showView('host')">Quiz Hosten</button>
                 <button class="btn secondary" onclick="showView('join')">Meedoen aan Quiz</button>
+                <hr>
+                <button class="btn ghost" onclick="showView('login')">Inloggen / Registeren</button>
+            </div>
+        </section>
+
+        <!-- LOGIN -->
+        <section id="view-login" class="view">
+            <div class="card" id="login-form">
+                <h2>Account</h2>
+                <input type="email" id="auth-email" placeholder="E-mail">
+                <input type="password" id="auth-password" placeholder="Wachtwoord">
+                <p id="auth-error" class="hidden" style="color:#e74c3c;font-size:0.9rem;"></p>
+                <button class="btn primary" onclick="login()">Inloggen</button>
+                <button class="btn secondary" onclick="register()">Account maken</button>
+                <button class="btn ghost" onclick="showView('home')">Terug</button>
+            </div>
+        </section>
+
+        <!-- SHOP -->
+        <section id="view-shop" class="view">
+            <div class="card">
+                <h2>Skin Shop</h2>
+                <p id="shop-coins"></p>
+                <div id="skin-grid"></div>
+                <button class="btn ghost" onclick="goHome()">Terug</button>
             </div>
         </section>
 
@@ -31,7 +61,7 @@
                 <input type="text" id="join-name" placeholder="Jouw naam" maxlength="30">
                 <input type="text" id="join-code" placeholder="Quiz code" maxlength="6" style="text-transform:uppercase">
                 <button class="btn primary" onclick="joinGame()">Meedoen</button>
-                <button class="btn ghost" onclick="showView('home')">Terug</button>
+                <button class="btn ghost" onclick="goHome()">Terug</button>
             </div>
         </section>
 
@@ -44,8 +74,15 @@
                     <input type="checkbox" id="host-participate" checked>
                     Ik doe zelf ook mee als speler
                 </label>
+                <div id="saved-quiz-select" class="hidden">
+                    <label style="color:#aaa;font-size:0.9rem;">Of laad een opgeslagen quiz:</label>
+                    <select id="load-quiz-select" onchange="onLoadQuizSelect()">
+                        <option value="">-- Kies een quiz --</option>
+                    </select>
+                    <button class="btn secondary small" onclick="loadSavedQuiz()">Laden</button>
+                </div>
                 <button class="btn primary" onclick="createGame()">Nieuwe Quiz Starten</button>
-                <button class="btn ghost" onclick="showView('home')">Terug</button>
+                <button class="btn ghost" onclick="goHome()">Terug</button>
             </div>
 
             <div class="card hidden" id="host-lobby">
@@ -56,6 +93,9 @@
 
                 <div id="question-editor">
                     <h3>Vragen beheren</h3>
+                    <div style="display:flex;gap:8px;justify-content:center;margin-bottom:12px;flex-wrap:wrap;">
+                        <button class="btn secondary small" onclick="saveQuizTemplate()">Quiz opslaan</button>
+                    </div>
                     <div id="question-list"></div>
                     <button class="btn secondary" onclick="addQuestion()">+ Vraag Toevoegen</button>
 
@@ -63,28 +103,24 @@
                         <select id="q-type" onchange="onQuestionTypeChange()">
                             <option value="multiple">Meerkeuze (A/B/C/D)</option>
                             <option value="truefalse">Waar / Niet waar</option>
-                            <option value="open">Open vraag (zelf invullen)</option>
+                            <option value="open">Open vraag</option>
                         </select>
                         <input type="text" id="q-text" placeholder="Vraag">
-
                         <div id="q-options-group">
                             <input type="text" id="q-opt0" placeholder="Optie A">
                             <input type="text" id="q-opt1" placeholder="Optie B">
                             <input type="text" id="q-opt2" placeholder="Optie C">
                             <input type="text" id="q-opt3" placeholder="Optie D">
-                            <div id="q-answer-select">
+                            <div class="q-answer-select">
                                 <label>Juiste antwoord:</label>
                                 <select id="q-answer">
-                                    <option value="0">A</option>
-                                    <option value="1">B</option>
-                                    <option value="2">C</option>
-                                    <option value="3">D</option>
+                                    <option value="0">A</option><option value="1">B</option>
+                                    <option value="2">C</option><option value="3">D</option>
                                 </select>
                             </div>
                         </div>
-
                         <div id="q-truefalse-group" class="hidden">
-                            <div id="q-answer-select">
+                            <div class="q-answer-select">
                                 <label>Juiste antwoord:</label>
                                 <select id="q-tf-answer">
                                     <option value="true">Waar</option>
@@ -92,11 +128,9 @@
                                 </select>
                             </div>
                         </div>
-
                         <div id="q-open-group" class="hidden">
-                            <input type="text" id="q-open-answer" placeholder="Juiste antwoord (optioneel voor nakijken)">
+                            <input type="text" id="q-open-answer" placeholder="Juiste antwoord (optioneel)">
                         </div>
-
                         <button class="btn primary" onclick="saveQuestion()">Opslaan</button>
                         <button class="btn ghost" onclick="cancelQuestionEdit()">Annuleren</button>
                     </div>
@@ -122,13 +156,14 @@
                 </div>
                 <div id="host-controls">
                     <button class="btn primary" id="btn-next-question" onclick="nextQuestion()">Volgende Vraag</button>
-                    <button class="btn danger" id="btn-end-game" onclick="endGame()">Quiz Beëindigen</button>
+                    <button class="btn danger" onclick="endGame()">Quiz Beëindigen</button>
                 </div>
                 <div id="host-answers-status"></div>
             </div>
 
             <div class="card hidden" id="host-result">
                 <h2>Eindstand</h2>
+                <p id="earnings-msg" class="hidden"></p>
                 <div id="final-standings"></div>
                 <button class="btn primary" onclick="resetQuiz()">Nieuwe Quiz</button>
             </div>
@@ -140,7 +175,6 @@
                 <h2>Wachten op quiz...</h2>
                 <p id="play-waiting-msg"></p>
             </div>
-
             <div class="card hidden" id="play-question">
                 <p id="play-question-number"></p>
                 <p id="play-question-text"></p>
@@ -152,7 +186,6 @@
                 <p id="play-feedback" class="hidden"></p>
                 <p id="play-score-display">Score: 0</p>
             </div>
-
             <div class="card hidden" id="play-result">
                 <h2>Quiz Voltooid!</h2>
                 <p id="play-final-score"></p>
@@ -162,12 +195,8 @@
     </div>
 
     <button id="error-log-btn" onclick="toggleErrorLog()" title="Error Log">⚠</button>
-
     <div id="error-log-modal" class="hidden">
-        <div id="error-log-header">
-            <span>Error Log</span>
-            <button onclick="toggleErrorLog()">✕</button>
-        </div>
+        <div id="error-log-header"><span>Error Log</span><button onclick="toggleErrorLog()">✕</button></div>
         <div id="error-log-list"></div>
         <button id="error-log-clear" onclick="clearErrorLog()">Wis log</button>
     </div>
