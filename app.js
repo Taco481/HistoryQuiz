@@ -64,7 +64,6 @@ async function register() {
     const nickname = document.getElementById('auth-nickname').value.trim();
     const password = document.getElementById('auth-password').value;
     if (!nickname || !password) { showAuthError('Vul gebruikersnaam en wachtwoord in.'); return; }
-    if (password.length < 6) { showAuthError('Wachtwoord moet minstens 6 tekens zijn.'); return; }
     try {
         const email = nickname.toLowerCase().replace(/\s+/g, '_') + '@hq.local';
         const { data, error } = await sb.auth.signUp({ email, password, options: { data: { username: nickname } } });
