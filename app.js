@@ -53,7 +53,7 @@ async function login() {
     const password = document.getElementById('auth-password').value;
     if (!nickname || !password) { showAuthError('Vul gebruikersnaam en wachtwoord in.'); return; }
     try {
-        const { data, error } = await sb.rpc('login_user', { p_username: nickname, p_password: password });
+        const { data, error } = await sb.rpc('login_user', { payload: { username: nickname, password } });
         if (error) { showAuthError(error.message); return; }
         const user = data;
         if (user.error) { showAuthError(user.error); return; }
@@ -67,7 +67,7 @@ async function register() {
     const password = document.getElementById('auth-password').value;
     if (!nickname || !password) { showAuthError('Vul gebruikersnaam en wachtwoord in.'); return; }
     try {
-        const { data, error } = await sb.rpc('register_user', { p_username: nickname, p_password: password });
+        const { data, error } = await sb.rpc('register_user', { payload: { username: nickname, password } });
         if (error) { showAuthError(error.message); return; }
         if (data?.error) { showAuthError(data.error); return; }
         showAuthError('Account gemaakt! Je kunt nu inloggen.', false);

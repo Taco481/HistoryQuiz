@@ -168,17 +168,21 @@ ON CONFLICT (name) DO NOTHING;
 DROP FUNCTION IF EXISTS register_user;
 DROP FUNCTION IF EXISTS login_user;
 
--- REGISTREREN
-CREATE OR REPLACE FUNCTION register_user(p_username TEXT, p_password TEXT)
+-- REGISTREREN (enkel JSONB parameter om PostgREST cache problemen te vermijden)
+CREATE OR REPLACE FUNCTION register_user(payload JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = ''
 AS $$
 DECLARE
   v_user profiles;
+  v_username TEXT;
+  v_password TEXT;
 BEGIN
+  v_username := payload->>'username';
+  v_password := payload->>'password';
   INSERT INTO profiles (username, password_hash, coins, selected_skin)
-  VALUES (p_username, crypt(p_password, gen_salt('bf')), 100, 'default')
+  VALUES (v_username, crypt(v_password, gen_salt('bf')), 100, 'default')
   RETURNING * INTO v_user;
   RETURN jsonb_build_object(
     'id', v_user.id,
@@ -192,20 +196,24 @@ EXCEPTION
 END;
 $$;
 
--- INLOGGEN
-CREATE OR REPLACE FUNCTION login_user(p_username TEXT, p_password TEXT)
+-- INLOGGEN (enkel JSONB parameter)
+CREATE OR REPLACE FUNCTION login_user(payload JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = ''
 AS $$
 DECLARE
   v_user profiles;
+  v_username TEXT;
+  v_password TEXT;
 BEGIN
-  SELECT * INTO v_user FROM profiles WHERE username = p_username;
+  v_username := payload->>'username';
+  v_password := payload->>'password';
+  SELECT * INTO v_user FROM profiles WHERE username = v_username;
   IF v_user.id IS NULL THEN
     RETURN jsonb_build_object('error', 'Gebruiker niet gevonden');
   END IF;
-  IF v_user.password_hash = crypt(p_password, v_user.password_hash) THEN
+  IF v_user.password_hash = crypt(v_password, v_user.password_hash) THEN
     RETURN jsonb_build_object(
       'id', v_user.id,
       'username', v_user.username,
