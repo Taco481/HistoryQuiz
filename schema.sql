@@ -1,6 +1,10 @@
 -- Voer dit uit in de Supabase SQL Editor
--- Herhaal dit NIET als tabellen al bestaan (gebruik CREATE TABLE IF NOT EXISTS)
+-- Let op: dit verwijdert bestaande data! Draai alleen op een lege/nieuwe database.
 
+-- Enable pgcrypto voor wachtwoord hashing
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- GAMES
 CREATE TABLE IF NOT EXISTS games (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   code VARCHAR(6) UNIQUE NOT NULL,
@@ -10,6 +14,7 @@ CREATE TABLE IF NOT EXISTS games (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- PLAYERS
 CREATE TABLE IF NOT EXISTS players (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   game_id UUID REFERENCES games(id) ON DELETE CASCADE,
@@ -18,6 +23,7 @@ CREATE TABLE IF NOT EXISTS players (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ANSWERS
 CREATE TABLE IF NOT EXISTS answers (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   game_id UUID REFERENCES games(id) ON DELETE CASCADE,
@@ -28,6 +34,7 @@ CREATE TABLE IF NOT EXISTS answers (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- QUESTIONS
 CREATE TABLE IF NOT EXISTS questions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   game_id UUID REFERENCES games(id) ON DELETE CASCADE,
@@ -39,10 +46,12 @@ CREATE TABLE IF NOT EXISTS questions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- PROFILES (extends auth.users)
-CREATE TABLE IF NOT EXISTS profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+-- PROFILES (gebruikers, geen koppeling met auth.users meer)
+DROP TABLE IF EXISTS profiles CASCADE;
+CREATE TABLE profiles (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   username VARCHAR(50) UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
   coins INT DEFAULT 100,
   selected_skin VARCHAR(50) DEFAULT 'default',
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -100,7 +109,7 @@ ALTER TABLE saved_questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE skins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_skins ENABLE ROW LEVEL SECURITY;
 
--- POLICIES (allow all for simplicity)
+-- POLICIES (alles toegestaan)
 DO $$ BEGIN
   CREATE POLICY "Allow all on questions" ON questions FOR ALL USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN null; END $$;
@@ -145,24 +154,54 @@ INSERT INTO skins (name, display_name, description, price, primary_color, bg_sta
 ('gold', 'Goud', 'Luxe gouden look', 200, '#ffd700', '#1a1a00', '#665d00')
 ON CONFLICT (name) DO NOTHING;
 
--- AUTO-CREATE PROFILE ON SIGNUP
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER
+-- ==================== AUTH RPC's ====================
+
+-- REGISTREREN
+CREATE OR REPLACE FUNCTION register_user(p_username TEXT, p_password TEXT)
+RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = ''
 AS $$
+DECLARE
+  v_user profiles;
 BEGIN
-  INSERT INTO public.profiles (id, username, coins)
-  VALUES (
-    NEW.id,
-    COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
-    100
+  INSERT INTO profiles (username, password_hash, coins, selected_skin)
+  VALUES (p_username, crypt(p_password, gen_salt('bf')), 100, 'default')
+  RETURNING * INTO v_user;
+  RETURN jsonb_build_object(
+    'id', v_user.id,
+    'username', v_user.username,
+    'coins', v_user.coins,
+    'selected_skin', v_user.selected_skin
   );
-  RETURN NEW;
+EXCEPTION
+  WHEN unique_violation THEN
+    RETURN jsonb_build_object('error', 'Deze gebruikersnaam is al in gebruik.');
 END;
 $$;
 
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+-- INLOGGEN
+CREATE OR REPLACE FUNCTION login_user(p_username TEXT, p_password TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_user profiles;
+BEGIN
+  SELECT * INTO v_user FROM profiles WHERE username = p_username;
+  IF v_user.id IS NULL THEN
+    RETURN jsonb_build_object('error', 'Gebruiker niet gevonden');
+  END IF;
+  IF v_user.password_hash = crypt(p_password, v_user.password_hash) THEN
+    RETURN jsonb_build_object(
+      'id', v_user.id,
+      'username', v_user.username,
+      'coins', v_user.coins,
+      'selected_skin', v_user.selected_skin
+    );
+  ELSE
+    RETURN jsonb_build_object('error', 'Ongeldig wachtwoord');
+  END IF;
+END;
+$$;

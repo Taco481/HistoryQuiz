@@ -53,10 +53,12 @@ async function login() {
     const password = document.getElementById('auth-password').value;
     if (!nickname || !password) { showAuthError('Vul gebruikersnaam en wachtwoord in.'); return; }
     try {
-        const email = nickname.toLowerCase().replace(/\s+/g, '_') + '@hq.local';
-        const { data, error } = await sb.auth.signInWithPassword({ email, password });
+        const { data, error } = await sb.rpc('login_user', { p_username: nickname, p_password: password });
         if (error) { showAuthError(error.message); return; }
-        await onAuth(data.user, nickname);
+        const user = data;
+        if (user.error) { showAuthError(user.error); return; }
+        localStorage.setItem('hq_user', JSON.stringify(user));
+        await onAuth(user);
     } catch (e) { showAuthError('Fout bij inloggen.'); }
 }
 
@@ -65,10 +67,9 @@ async function register() {
     const password = document.getElementById('auth-password').value;
     if (!nickname || !password) { showAuthError('Vul gebruikersnaam en wachtwoord in.'); return; }
     try {
-        const email = nickname.toLowerCase().replace(/\s+/g, '_') + '@hq.local';
-        const { data, error } = await sb.auth.signUp({ email, password, options: { data: { username: nickname } } });
+        const { data, error } = await sb.rpc('register_user', { p_username: nickname, p_password: password });
         if (error) { showAuthError(error.message); return; }
-        if (data?.user?.identities?.length === 0) { showAuthError('Deze gebruikersnaam is al in gebruik.'); return; }
+        if (data?.error) { showAuthError(data.error); return; }
         showAuthError('Account gemaakt! Je kunt nu inloggen.', false);
     } catch (e) { showAuthError('Fout bij registreren.'); }
 }
@@ -80,15 +81,14 @@ function showAuthError(msg, isError = true) {
     el.style.color = isError ? '#e74c3c' : '#2ecc71';
 }
 
-async function onAuth(user, nickname) {
+async function onAuth(user) {
     if (!user) return;
     currentUser = user;
     document.getElementById('user-bar').classList.remove('hidden');
     document.getElementById('login-btn-home').classList.add('hidden');
+    document.getElementById('user-email').textContent = 'Ingelogd als ' + user.username;
     showView('home');
     await loadProfile();
-    const name = nickname || currentUser?.profile?.username || user.email.split('@')[0];
-    document.getElementById('user-email').textContent = 'Ingelogd als ' + name;
     await applySkin();
     await loadSavedQuizzesSelect();
 }
@@ -97,25 +97,25 @@ async function loadProfile() {
     if (!currentUser) return;
     const { data } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
     if (data) {
-        currentUser.profile = data;
+        currentUser.coins = data.coins;
+        currentUser.selected_skin = data.selected_skin;
         document.getElementById('user-coins').textContent = '🪙 ' + data.coins;
         document.getElementById('shop-coins').textContent = 'Jouw coins: 🪙 ' + data.coins;
     }
 }
 
 async function logout() {
-    await sb.auth.signOut();
     currentUser = null;
+    localStorage.removeItem('hq_user');
     document.getElementById('user-bar').classList.add('hidden');
     document.getElementById('login-btn-home').classList.remove('hidden');
     showView('home');
 }
 
-// Check existing session on load
+// Check saved session on load
 (async function() {
-    if (!sb) return;
-    const { data: { session } } = await sb.auth.getSession();
-    if (session?.user) await onAuth(session.user);
+    const saved = localStorage.getItem('hq_user');
+    if (saved) await onAuth(JSON.parse(saved));
 })();
 
 // ==================== SHOP ====================
@@ -138,7 +138,7 @@ async function renderShop() {
     const grid = document.getElementById('skin-grid');
     grid.innerHTML = (allSkins || []).map(s => {
         const isOwned = ownedIds.includes(s.id);
-        const isEquipped = currentUser.profile?.selected_skin === s.name;
+        const isEquipped = currentUser?.selected_skin === s.name;
         return `<div class="skin-card ${isEquipped ? 'equipped' : isOwned ? 'owned' : ''}">
             <div class="skin-preview" style="background:linear-gradient(135deg,${s.bg_start},${s.bg_end});border:2px solid ${s.primary_color};"></div>
             <div class="skin-name">${s.display_name}</div>
@@ -152,23 +152,23 @@ async function renderShop() {
 }
 
 async function buySkin(skinId, skinName, price) {
-    if (currentUser.profile.coins < price) { alert('Niet genoeg coins!'); return; }
+    if (currentUser.coins < price) { alert('Niet genoeg coins!'); return; }
     const { error } = await sb.from('user_skins').insert({ user_id: currentUser.id, skin_id: skinId });
     if (error) { logError('Kopen mislukt', error); alert('Fout bij kopen.'); return; }
-    await sb.from('profiles').update({ coins: currentUser.profile.coins - price }).eq('id', currentUser.id);
-    currentUser.profile.coins -= price;
+    await sb.from('profiles').update({ coins: currentUser.coins - price }).eq('id', currentUser.id);
+    currentUser.coins -= price;
     await renderShop();
 }
 
 async function equipSkin(skinName) {
     await sb.from('profiles').update({ selected_skin: skinName }).eq('id', currentUser.id);
-    currentUser.profile.selected_skin = skinName;
+    currentUser.selected_skin = skinName;
     await applySkin();
     await renderShop();
 }
 
 async function applySkin() {
-    const skinName = currentUser?.profile?.selected_skin || 'default';
+    const skinName = currentUser?.selected_skin || 'default';
     const { data: skins } = await sb.from('skins').select('*').eq('name', skinName).limit(1);
     if (!skins || !skins[0]) return;
     const s = skins[0];
@@ -417,7 +417,7 @@ async function awardHostCoins() {
         const el = document.getElementById('earnings-msg');
         el.textContent = '🎉 +' + coins + ' coins verdiend (' + count + ' spelers x 5)!';
         el.classList.remove('hidden');
-        if (currentUser.profile) currentUser.profile.coins = prof.coins + coins;
+        currentUser.coins = prof.coins + coins;
     }
 }
 
