@@ -148,10 +148,18 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- REALTIME
-ALTER PUBLICATION supabase_realtime ADD TABLE questions;
-ALTER PUBLICATION supabase_realtime ADD TABLE games;
-ALTER PUBLICATION supabase_realtime ADD TABLE players;
-ALTER PUBLICATION supabase_realtime ADD TABLE answers;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE questions;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE games;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE players;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE answers;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- SEED SKINS
 INSERT INTO skins (name, display_name, description, price, primary_color, bg_start, bg_end) VALUES
