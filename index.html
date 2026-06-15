@@ -61,9 +61,6 @@
                 <h2>Meedoen aan Quiz</h2>
                 <input type="text" id="join-name" placeholder="Jouw naam" maxlength="30">
                 <input type="text" id="join-code" placeholder="Quiz code" maxlength="6" style="text-transform:uppercase">
-                <div id="crypto-password-group" class="hidden">
-                    <input type="password" id="join-crypto-password" placeholder="Crypto wachtwoord">
-                </div>
                 <button class="btn primary" onclick="joinGame()">Meedoen</button>
                 <button class="btn ghost" onclick="goHome()">Terug</button>
             </div>
@@ -193,6 +190,13 @@
                 <h2>Wachten op quiz...</h2>
                 <p id="play-waiting-msg"></p>
             </div>
+            <div class="card hidden" id="play-crypto-setup" style="text-align:center;">
+                <h2>🔐 Crypto Heist</h2>
+                <p>Kies een geheim wachtwoord. Andere spelers kunnen proberen jouw wachtwoord te raden met een Hack-kaart!</p>
+                <input type="password" id="crypto-setup-password" placeholder="Jouw geheime wachtwoord" maxlength="20">
+                <p id="crypto-setup-error" class="hidden" style="color:#e74c3c;font-size:0.9rem;"></p>
+                <button class="btn primary" onclick="setCryptoPassword()">Bevestig</button>
+            </div>
             <div class="card hidden" id="play-question">
                 <p id="play-question-number"></p>
                 <p id="play-timer" class="hidden" style="font-size:1.5em;font-weight:bold;color:#e74c3c;"></p>
@@ -205,6 +209,19 @@
                 <p id="play-feedback" class="hidden"></p>
                 <p id="play-score-display">Score: 0</p>
                 <div id="rush-question-nav" class="hidden" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:12px;"></div>
+            </div>
+            <div class="card hidden" id="play-crypto-cards" style="text-align:center;">
+                <h2>🔐 Kies een beloningskaart!</h2>
+                <div id="crypto-card-grid" style="display:flex;gap:12px;justify-content:center;margin:16px 0;"></div>
+                <p id="crypto-card-result" class="hidden" style="font-size:1.1rem;font-weight:bold;margin-top:12px;"></p>
+            </div>
+            <div id="crypto-hack-modal" class="hidden" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:999;">
+                <div class="card" style="max-width:400px;">
+                    <h2>🎭 Hack!</h2>
+                    <p>Welk wachtwoord hoort bij <strong id="hack-target-name"></strong>?</p>
+                    <div id="hack-password-options" style="display:flex;flex-direction:column;gap:8px;margin:16px 0;"></div>
+                    <p id="hack-result" class="hidden" style="font-size:1rem;font-weight:bold;"></p>
+                </div>
             </div>
             <div class="card hidden" id="play-result">
                 <h2>Quiz Voltooid!</h2>

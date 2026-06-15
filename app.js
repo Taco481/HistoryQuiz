@@ -53,8 +53,8 @@ function onModeChange() {
     const desc = document.getElementById('modeDescription');
     const descriptions = {
         standard: 'Standaard: klassiek vragen beantwoorden, meeste punten wint',
-        crypto: '🔐 Crypto Heist: crypto-wachtwoord nodig, eerste goede antwoord krijgt bonus',
-        tijdbom: '⏱️ Tijdbom: beantwoord elke vraag binnen de tijdslimiet',
+        crypto: '🔐 Crypto Heist: kies een geheim wachtwoord na start. Bij goed antwoord kies je een beloningskaart (2x,3x,hack,+50,+20,+10,nothing). Bij hack raad je andermans wachtwoord!',
+        tijdbom: '⏱️ Tijdbom: globale tijdslimiet, 1 punt per goed antwoord, bij fout 3s lockout, minste goede antwoorden verliest',
         snelle: '⚡ Snelle Vingers: snelste goede antwoord krijgt meeste punten',
         eliminatie: '💀 Eliminatie: laagste score wordt geëlimineerd na elke vraag',
         rush: '🚀 Rush: alle vragen tegelijk zichtbaar, beantwoord in willekeurige volgorde'
@@ -133,12 +133,6 @@ async function logout() {
     const saved = localStorage.getItem('hq_user');
     if (saved) await onAuth(JSON.parse(saved));
 })();
-
-let joinCheckTimer;
-document.getElementById('join-code').addEventListener('input', () => {
-    clearTimeout(joinCheckTimer);
-    joinCheckTimer = setTimeout(checkJoinGameMode, 400);
-});
 
 // ==================== SHOP ====================
 
@@ -270,14 +264,9 @@ async function createGame() {
     const code = generateCode();
 
     let mode_state = {};
-    if (gameMode === 'crypto') {
-        const pw = prompt('Stel een crypto-wachtwoord in voor spelers:') || 'crypto'+Math.random().toString(36).slice(2,6);
-        mode_state.crypto_password = pw;
-        alert('Crypto wachtwoord: ' + pw + '\nDeel dit met spelers zodat ze kunnen joinen.');
-    }
     if (gameMode === 'tijdbom') {
-        const secs = parseInt(prompt('Tijdslimiet per vraag in seconden (10-60):') || '20');
-        mode_state.timer_seconds = Math.max(10, Math.min(60, secs || 20));
+        const secs = parseInt(prompt('Totale tijdslimiet in seconden (30-300):') || '120');
+        mode_state.timer_total = Math.max(30, Math.min(300, secs || 120));
     }
 
     try {
@@ -382,15 +371,6 @@ async function deleteQuestion(id) {
     if (r) for (let i=0;i<r.length;i++) await sb.from('questions').update({question_index:i}).eq('id',r[i].id);
 }
 
-async function checkJoinGameMode() {
-    const code = document.getElementById('join-code').value.trim().toUpperCase();
-    const cryptoGroup = document.getElementById('crypto-password-group');
-    if (!code || code.length !== 6) { cryptoGroup.classList.add('hidden'); return; }
-    const { data: game } = await sb.from('games').select('mode').eq('code', code).maybeSingle();
-    if (game && game.mode === 'crypto') cryptoGroup.classList.remove('hidden');
-    else cryptoGroup.classList.add('hidden');
-}
-
 async function joinGame() {
     if (!supabaseAvailable) { alert('Supabase niet beschikbaar.'); return; }
     playerName = document.getElementById('join-name').value.trim();
@@ -403,11 +383,6 @@ async function joinGame() {
     if (game.status === 'finished') { alert('Deze quiz is al afgelopen.'); return; }
     gameId = game.id; gameCode = code; gameMode = game.mode || 'standard';
     modeState = game.mode_state || {};
-
-    if (gameMode === 'crypto') {
-        const pw = document.getElementById('join-crypto-password').value.trim();
-        if (pw !== modeState.crypto_password) { alert('Crypto wachtwoord onjuist!'); return; }
-    }
 
     const state = gameMode === 'eliminatie' ? { eliminated: false } : {};
     const { data: player } = await sb.from('players').insert({ game_id: gameId, name: playerName, score: 0, state }).select().single();
@@ -549,6 +524,13 @@ async function startGame() {
     if (gameMode === 'rush') {
         update.mode_state = { rush_unlocked: questions.map(() => true) };
     }
+    if (gameMode === 'tijdbom') {
+        const totalSecs = modeState.timer_total || 120;
+        const timerEnd = new Date(Date.now() + totalSecs * 1000).toISOString();
+        update.mode_state = { timer_total: totalSecs, timer_end: timerEnd };
+        modeState = update.mode_state;
+        startGlobalTimer('host');
+    }
     await sb.from('games').update(update).eq('id', gameId);
     document.getElementById('host-lobby').classList.add('hidden');
     document.getElementById('host-game').classList.remove('hidden');
@@ -579,10 +561,12 @@ function showHostQuestion(index) {
 
     if (gameMode === 'tijdbom') {
         timerEl.classList.remove('hidden');
-        startTimer('host');
-    } else {
+        if (!window._globalTimerRunning) startGlobalTimer('host');
+    } else if (gameMode !== 'rush') {
         timerEl.classList.add('hidden');
         clearInterval(timerInterval);
+    } else {
+        timerEl.classList.add('hidden');
     }
 
     if (q.type === 'open') {
@@ -598,6 +582,21 @@ function showHostQuestion(index) {
 
 async function showPlayerQuestion(index) {
     if (index >= questions.length) return;
+
+    // Crypto: check if player has set password yet
+    if (gameMode === 'crypto') {
+        const { data: me } = await sb.from('players').select('state').eq('id', playerId).single();
+        if (!me?.state?.crypto_password) {
+            document.getElementById('play-question').classList.add('hidden');
+            document.getElementById('play-crypto-setup').classList.remove('hidden');
+            document.getElementById('play-crypto-cards').classList.add('hidden');
+            document.getElementById('crypto-hack-modal').classList.add('hidden');
+            return;
+        }
+        document.getElementById('play-crypto-setup').classList.add('hidden');
+        document.getElementById('play-question').classList.remove('hidden');
+    }
+
     const q = questions[index];
     playerAnswered = false;
     document.getElementById('play-question-number').textContent = 'Vraag '+(index+1)+' van '+questions.length;
@@ -619,7 +618,7 @@ async function showPlayerQuestion(index) {
 
     if (gameMode === 'tijdbom') {
         timerEl.classList.remove('hidden');
-        startTimer('player');
+        if (!window._globalTimerRunning) startGlobalTimer('player');
     } else {
         timerEl.classList.add('hidden');
         clearInterval(timerInterval);
@@ -687,13 +686,57 @@ async function submitAnswer(index) {
         const { data: p } = await sb.from('players').select('state').eq('id', playerId).single();
         if (p?.state?.eliminated) return;
     }
+    // Tijdbom: check lockout
+    if (gameMode === 'tijdbom') {
+        const { data: p } = await sb.from('players').select('state').eq('id', playerId).single();
+        if (p?.state?.lockout_until && new Date(p.state.lockout_until) > new Date()) {
+            const remaining = Math.ceil((new Date(p.state.lockout_until) - new Date()) / 1000);
+            document.getElementById('play-feedback').textContent = '⏳ Wacht nog ' + remaining + 's (lockout)';
+            document.getElementById('play-feedback').className = 'wrong';
+            document.getElementById('play-feedback').classList.remove('hidden');
+            return;
+        }
+    }
     const q = questions[currentQuestionIndex];
     const correct = index === parseInt(q.answer);
 
     let pts = correct ? 10 : 0;
-    // Crypto Heist bonus for first correct answer
+    // Tijdbom: 1 point per correct answer, wrong = 3s lockout
+    if (gameMode === 'tijdbom') {
+        pts = correct ? 1 : 0;
+        await sb.from('answers').insert({ game_id:gameId, player_id:playerId, question_index:currentQuestionIndex, answer:String(index), correct });
+        if (correct) {
+            const { data: c } = await sb.from('players').select('score').eq('id',playerId).single();
+            if (c) await sb.from('players').update({ score: c.score + 1 }).eq('id',playerId);
+            document.querySelectorAll('#play-options .option-btn').forEach((b,i) => {
+                b.disabled = true;
+                if (i === index) b.classList.add('correct');
+                if (i === parseInt(q.answer)) b.classList.add('correct');
+            });
+            document.getElementById('play-feedback').textContent = 'Goed! +1 punt';
+            document.getElementById('play-feedback').className = 'correct';
+            document.getElementById('play-feedback').classList.remove('hidden');
+        } else {
+            const lockoutUntil = new Date(Date.now() + 3000).toISOString();
+            await sb.from('players').update({ state: { lockout_until: lockoutUntil } }).eq('id', playerId);
+            document.querySelectorAll('#play-options .option-btn').forEach(b => b.disabled = true);
+            document.getElementById('play-feedback').textContent = '❌ Fout! 3 seconden lockout...';
+            document.getElementById('play-feedback').className = 'wrong';
+            document.getElementById('play-feedback').classList.remove('hidden');
+            setTimeout(() => {
+                document.querySelectorAll('#play-options .option-btn').forEach(b => b.disabled = false);
+                document.getElementById('play-feedback').classList.add('hidden');
+            }, 3000);
+        }
+        await updatePlayerScore();
+        return;
+    }
+    // Crypto Heist: correct answer gives card draw
     if (correct && gameMode === 'crypto') {
-        pts = 15;
+        await sb.from('answers').insert({ game_id:gameId, player_id:playerId, question_index:currentQuestionIndex, answer:String(index), correct });
+        playerAnswered = false; // allow card interaction
+        showCryptoCards();
+        return;
     }
     // Snelle Vingers: points based on answer position
     if (correct && gameMode === 'snelle') {
@@ -712,7 +755,7 @@ async function submitAnswer(index) {
         if (i === index) b.classList.add(correct?'correct':'wrong');
         if (i === parseInt(q.answer)) b.classList.add('correct');
     });
-    const ptsMsg = gameMode === 'crypto' && correct ? ' +15' : (gameMode === 'snelle' && correct ? ' +'+pts : correct ? ' +10' : '');
+    const ptsMsg = gameMode === 'snelle' && correct ? ' +'+pts : correct ? ' +10' : '';
     document.getElementById('play-feedback').textContent = correct ? 'Goed!'+ptsMsg+' punten' : 'Het antwoord was: '+(q.options?.[parseInt(q.answer)]||q.answer);
     document.getElementById('play-feedback').className = correct ? 'correct' : 'wrong';
     document.getElementById('play-feedback').classList.remove('hidden');
@@ -751,12 +794,14 @@ async function updatePlayerScore() {
 }
 
 async function nextQuestion() {
-    // Eliminatie: eliminate lowest-scoring player(s) before next question
+    // Eliminatie: eliminate lowest-scoring player(s) every 3 questions
     if (gameMode === 'eliminatie') {
-        await doElimination();
-        // Check if only 1 player left
-        const { data: active } = await sb.from('players').select('*').eq('game_id', gameId).filter('state->>eliminated', 'eq', 'false');
-        if (active && active.length <= 1) { await endGame(); return; }
+        const n = currentQuestionIndex + 1;
+        if (n % 3 === 0 && n > 0) {
+            await doElimination();
+            const { data: active } = await sb.from('players').select('*').eq('game_id', gameId).filter('state->>eliminated', 'eq', 'false');
+            if (active && active.length <= 1) { await endGame(); return; }
+        }
     }
     const n = currentQuestionIndex + 1;
     if (n >= questions.length) { await endGame(); return; }
@@ -774,6 +819,184 @@ async function doElimination() {
             await sb.from('players').update({ state: { eliminated: true } }).eq('id', p.id);
         }
     }
+}
+
+// ==================== CRYPTO HEIST ====================
+
+async function setCryptoPassword() {
+    const pw = document.getElementById('crypto-setup-password').value.trim();
+    if (!pw || pw.length < 2) { document.getElementById('crypto-setup-error').textContent = 'Kies een wachtwoord van min. 2 tekens.'; document.getElementById('crypto-setup-error').classList.remove('hidden'); return; }
+    document.getElementById('crypto-setup-error').classList.add('hidden');
+    await sb.from('players').update({ state: { crypto_password: pw } }).eq('id', playerId);
+    document.getElementById('play-crypto-setup').classList.add('hidden');
+    document.getElementById('play-question').classList.remove('hidden');
+}
+
+function showCryptoCards() {
+    document.getElementById('play-question').classList.add('hidden');
+    document.getElementById('play-crypto-setup').classList.add('hidden');
+    document.getElementById('play-crypto-cards').classList.remove('hidden');
+    document.getElementById('crypto-card-result').classList.add('hidden');
+
+    const rewards = ['2x', '3x', 'hack', '+50', '+20', '+10', 'nothing'];
+    const shuffled = rewards.sort(() => Math.random() - 0.5).slice(0, 3);
+    const grid = document.getElementById('crypto-card-grid');
+    grid.innerHTML = shuffled.map((r, i) =>
+        `<div class="crypto-card" data-reward="${r}" onclick="pickCryptoCard(${i},this)" style="width:100px;height:140px;background:linear-gradient(135deg,#e94560,#c0392b);border-radius:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:2rem;color:#fff;font-weight:bold;box-shadow:0 4px 12px rgba(0,0,0,0.3);transition:transform 0.3s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">❓</div>`
+    ).join('');
+    window._cryptoRewards = shuffled;
+}
+
+async function pickCryptoCard(idx, el) {
+    const rewards = window._cryptoRewards;
+    if (!rewards) return;
+    // Disable all cards
+    document.querySelectorAll('.crypto-card').forEach(c => c.style.cursor = 'default');
+    document.querySelectorAll('.crypto-card').forEach(c => c.onclick = null);
+
+    const reward = rewards[idx];
+    el.textContent = reward;
+    el.style.background = 'linear-gradient(135deg,#2ecc71,#27ae60)';
+
+    let pts = 0;
+    if (reward === '2x') {
+        pts = 20; // 10 * 2 = 20 (but we skip base pts, so 20)
+    } else if (reward === '3x') {
+        pts = 30;
+    } else if (reward === '+50') {
+        pts = 50;
+    } else if (reward === '+20') {
+        pts = 20;
+    } else if (reward === '+10') {
+        pts = 10;
+    } else if (reward === 'nothing') {
+        pts = 0;
+    } else if (reward === 'hack') {
+        showHackModal();
+        return;
+    }
+
+    if (pts > 0) {
+        const { data: c } = await sb.from('players').select('score').eq('id', playerId).single();
+        if (c) await sb.from('players').update({ score: c.score + pts }).eq('id', playerId);
+    }
+
+    document.getElementById('crypto-card-result').textContent = reward === 'nothing' ? '😅 Helaas, niets!' : (reward === 'hack' ? '🎭 Hack!' : `🎉 +${pts} punten!`);
+    document.getElementById('crypto-card-result').classList.remove('hidden');
+    setTimeout(() => {
+        document.getElementById('play-crypto-cards').classList.add('hidden');
+        document.getElementById('play-question').classList.remove('hidden');
+        showPlayerQuestion(currentQuestionIndex);
+        updatePlayerScore();
+    }, 2000);
+}
+
+async function showHackModal() {
+    const players = await sb.from('players').select('*').eq('game_id', gameId);
+    if (!players.data || players.data.length < 2) {
+        document.getElementById('crypto-card-result').textContent = 'Niemand om te hacken!';
+        document.getElementById('crypto-card-result').classList.remove('hidden');
+        setTimeout(() => {
+            document.getElementById('play-crypto-cards').classList.add('hidden');
+            document.getElementById('play-question').classList.remove('hidden');
+            showPlayerQuestion(currentQuestionIndex);
+        }, 1500);
+        return;
+    }
+
+    // Pick random target who has a password set
+    const targets = players.data.filter(p => p.id !== playerId && p.state?.crypto_password);
+    if (targets.length === 0) {
+        document.getElementById('crypto-card-result').textContent = 'Niemand om te hacken!';
+        document.getElementById('crypto-card-result').classList.remove('hidden');
+        setTimeout(() => {
+            document.getElementById('play-crypto-cards').classList.add('hidden');
+            document.getElementById('play-question').classList.remove('hidden');
+            showPlayerQuestion(currentQuestionIndex);
+        }, 1500);
+        return;
+    }
+
+    const target = targets[Math.floor(Math.random() * targets.length)];
+    document.getElementById('hack-target-name').textContent = target.name;
+
+    // Generate 3 options: real password + 2 fakes
+    const fakeWords = ['goudvis', 'sterren', 'raket', 'geheim', 'codex', 'kluis', 'nacht', 'donder', 'vallei', 'tempel', 'akker', 'burcht', 'zweep', 'kroon', 'fakkel'];
+    const fakes = [];
+    while (fakes.length < 2) {
+        const w = fakeWords[Math.floor(Math.random() * fakeWords.length)];
+        if (w !== target.state.crypto_password && !fakes.includes(w)) fakes.push(w);
+    }
+    const options = [target.state.crypto_password, ...fakes].sort(() => Math.random() - 0.5);
+
+    document.getElementById('hack-password-options').innerHTML = options.map((opt, i) =>
+        `<button class="btn secondary" onclick="guessHackPassword(${i}, '${target.state.crypto_password.replace(/'/g, "\\'")}', '${target.id}')" style="display:block;width:100%;">${opt}</button>`
+    ).join('');
+
+    document.getElementById('hack-result').classList.add('hidden');
+    document.getElementById('crypto-hack-modal').classList.remove('hidden');
+    window._hackTarget = target;
+}
+
+async function guessHackPassword(idx, realPassword, targetId) {
+    const chosen = document.querySelectorAll('#hack-password-options .btn')[idx];
+    const guessed = chosen.textContent;
+    const correct = guessed === realPassword;
+
+    document.querySelectorAll('#hack-password-options .btn').forEach(b => b.disabled = true);
+
+    if (correct) {
+        const stealAmount = 15;
+        document.getElementById('hack-result').textContent = '✅ Geraden! +15 punten gestolen!';
+        document.getElementById('hack-result').className = 'correct';
+        const { data: hackTarget } = await sb.from('players').select('score').eq('id', targetId).single();
+        const { data: me } = await sb.from('players').select('score').eq('id', playerId).single();
+        if (hackTarget && me) {
+            await sb.from('players').update({ score: Math.max(0, hackTarget.score - stealAmount) }).eq('id', targetId);
+            await sb.from('players').update({ score: me.score + stealAmount }).eq('id', playerId);
+        }
+    } else {
+        document.getElementById('hack-result').textContent = '❌ Fout geraden! Het was: ' + realPassword;
+        document.getElementById('hack-result').className = 'wrong';
+    }
+    document.getElementById('hack-result').classList.remove('hidden');
+
+    setTimeout(() => {
+        document.getElementById('crypto-hack-modal').classList.add('hidden');
+        document.getElementById('play-crypto-cards').classList.add('hidden');
+        document.getElementById('play-question').classList.remove('hidden');
+        updatePlayerScore();
+        showPlayerQuestion(currentQuestionIndex);
+    }, 3000);
+}
+
+// ==================== GLOBAL TIMER (Tijdbom) ====================
+
+let globalTimerInterval = null;
+
+function startGlobalTimer(context) {
+    clearInterval(globalTimerInterval);
+    window._globalTimerRunning = true;
+    const elId = context === 'host' ? 'host-timer' : 'play-timer';
+    const el = document.getElementById(elId);
+    if (!el) return;
+
+    const endTime = modeState.timer_end ? new Date(modeState.timer_end).getTime() : Date.now() + (modeState.timer_total || 120) * 1000;
+
+    globalTimerInterval = setInterval(() => {
+        const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
+        const mins = Math.floor(remaining / 60);
+        const secs = remaining % 60;
+        if (el) el.textContent = '⏱️ ' + mins + ':' + (secs < 10 ? '0' : '') + secs;
+
+        if (remaining <= 0) {
+            clearInterval(globalTimerInterval);
+            clearInterval(timerInterval);
+            window._globalTimerRunning = false;
+            if (el) el.textContent = '⏱️ 0:00';
+            if (context === 'host') endGame();
+        }
+    }, 200);
 }
 
 // ==================== MODE HELPERS ====================
@@ -840,14 +1063,17 @@ function rushPlayerGoTo(index) {
 
 async function endGame() {
     clearInterval(timerInterval);
+    clearInterval(globalTimerInterval);
+    window._globalTimerRunning = false;
     await sb.from('games').update({ status:'finished' }).eq('id', gameId);
 }
 
 async function showFinalStandings() {
     const { data: p } = await sb.from('players').select('*').eq('game_id',gameId).order('score',{ascending:false});
     if (!p) return;
+    const ptsLabel = gameMode === 'tijdbom' ? '✅' : 'pts';
     document.getElementById('final-standings').innerHTML = p.map((x,i) =>
-        '<div class="standing-row"><span class="rank">#'+(i+1)+'</span><span class="name">'+x.name+'</span><span class="score">'+x.score+' pts</span></div>'
+        '<div class="standing-row"><span class="rank">#'+(i+1)+'</span><span class="name">'+x.name+'</span><span class="score">'+x.score+' '+ptsLabel+'</span></div>'
     ).join('');
 }
 
@@ -869,6 +1095,8 @@ async function cancelGame() {
 function resetQuiz() {
     if (supabaseChannel) supabaseChannel.unsubscribe();
     clearInterval(timerInterval);
+    clearInterval(globalTimerInterval);
+    window._globalTimerRunning = false;
     gameId=null; playerId=null; gameCode=null; currentQuestionIndex=0; playerAnswered=false; questions=[]; editingQuestionId=null;
     gameMode='standard'; modeState={};
     document.getElementById('modeSelect').value = 'standard';
@@ -879,5 +1107,8 @@ function resetQuiz() {
     document.getElementById('earnings-msg').classList.add('hidden');
     document.getElementById('rush-host-nav').classList.add('hidden');
     document.getElementById('rush-question-nav').classList.add('hidden');
+    document.getElementById('play-crypto-setup').classList.add('hidden');
+    document.getElementById('play-crypto-cards').classList.add('hidden');
+    document.getElementById('crypto-hack-modal').classList.add('hidden');
     showView('home');
 }

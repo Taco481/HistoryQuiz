@@ -704,6 +704,10 @@ hr { border: none; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 16px 
 .leaderboard-row.eliminated { opacity: 0.4; text-decoration: line-through; }
 .leaderboard-row.eliminated .lb-name { color: #666; }
 
+/* Crypto cards */
+.crypto-card:hover { transform: scale(1.05); }
+.crypto-card { user-select: none; }
+
 /* Responsive */
 @media (max-width: 500px) {
     #play-options, #host-options { grid-template-columns: 1fr; }
