@@ -833,7 +833,7 @@ async function setCryptoPassword() {
     document.getElementById('crypto-setup-error').classList.add('hidden');
     await sb.from('players').update({ state: { crypto_password: pw } }).eq('id', playerId);
     document.getElementById('play-crypto-setup').classList.add('hidden');
-    document.getElementById('play-question').classList.remove('hidden');
+    showPlayerQuestion(currentQuestionIndex);
 }
 
 function showCryptoCards() {
