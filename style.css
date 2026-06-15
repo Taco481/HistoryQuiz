@@ -685,6 +685,40 @@ hr { border: none; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 16px 
 
 #saved-quiz-select select option { background: #1a1a2e; color: #fff; }
 
+/* Mode themes */
+body[data-mode="crypto"] .logo { color: #00ff41; text-shadow: 0 0 20px rgba(0,255,65,0.3); }
+body[data-mode="crypto"] #game-code-display { color: #00ff41; border-color: #00ff41; background: rgba(0,255,65,0.1); }
+body[data-mode="crypto"] .btn.primary { background: #00cc33; }
+body[data-mode="crypto"] .btn.primary:hover { background: #009926; box-shadow: 0 4px 15px rgba(0,255,65,0.4); }
+body[data-mode="crypto"] input:focus { border-color: #00ff41; }
+body[data-mode="crypto"] .checkbox-label input[type="checkbox"] { accent-color: #00ff41; }
+body[data-mode="crypto"] #q-type option { background: #0a0a0a; }
+
+body[data-mode="tijdbom"] .logo { color: #ff6b35; text-shadow: 0 0 20px rgba(255,107,53,0.3); }
+body[data-mode="tijdbom"] #game-code-display { color: #ff6b35; border-color: #ff6b35; background: rgba(255,107,53,0.1); }
+body[data-mode="tijdbom"] .btn.primary { background: #e05500; }
+body[data-mode="tijdbom"] .btn.primary:hover { background: #c04800; box-shadow: 0 4px 15px rgba(255,107,53,0.4); }
+body[data-mode="tijdbom"] input:focus { border-color: #ff6b35; }
+body[data-mode="tijdbom"] .option-btn:hover:not(:disabled) { border-color: #ff6b35; background: rgba(255,107,53,0.15); }
+
+body[data-mode="snelle"] .logo { color: #ffd700; text-shadow: 0 0 20px rgba(255,215,0,0.3); }
+body[data-mode="snelle"] #game-code-display { color: #ffd700; border-color: #ffd700; background: rgba(255,215,0,0.1); }
+body[data-mode="snelle"] .btn.primary { background: #d4a800; }
+body[data-mode="snelle"] .btn.primary:hover { background: #b89200; box-shadow: 0 4px 15px rgba(255,215,0,0.4); }
+body[data-mode="snelle"] .option-btn:hover:not(:disabled) { border-color: #ffd700; background: rgba(255,215,0,0.15); }
+
+body[data-mode="eliminatie"] .logo { color: #8e44ad; text-shadow: 0 0 20px rgba(142,68,173,0.3); }
+body[data-mode="eliminatie"] #game-code-display { color: #8e44ad; border-color: #8e44ad; background: rgba(142,68,173,0.1); }
+body[data-mode="eliminatie"] .btn.primary { background: #7d3c98; }
+body[data-mode="eliminatie"] .btn.primary:hover { background: #6c3483; box-shadow: 0 4px 15px rgba(142,68,173,0.4); }
+body[data-mode="eliminatie"] .option-btn:hover:not(:disabled) { border-color: #8e44ad; background: rgba(142,68,173,0.15); }
+
+body[data-mode="rush"] .logo { color: #00d4ff; text-shadow: 0 0 20px rgba(0,212,255,0.3); }
+body[data-mode="rush"] #game-code-display { color: #00d4ff; border-color: #00d4ff; background: rgba(0,212,255,0.1); }
+body[data-mode="rush"] .btn.primary { background: #0099cc; }
+body[data-mode="rush"] .btn.primary:hover { background: #007799; box-shadow: 0 4px 15px rgba(0,212,255,0.4); }
+body[data-mode="rush"] .option-btn:hover:not(:disabled) { border-color: #00d4ff; background: rgba(0,212,255,0.15); }
+
 /* Mode selector */
 #modeSelect {
     width: 100%;

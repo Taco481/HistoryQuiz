@@ -261,6 +261,7 @@ async function createGame() {
     if (!hostName) { alert('Voer je naam in.'); return; }
     hostParticipates = document.getElementById('host-participate').checked;
     gameMode = document.getElementById('modeSelect').value;
+    applyModeTheme(gameMode);
     const code = generateCode();
 
     let mode_state = {};
@@ -383,6 +384,7 @@ async function joinGame() {
     if (game.status === 'finished') { alert('Deze quiz is al afgelopen.'); return; }
     gameId = game.id; gameCode = code; gameMode = game.mode || 'standard';
     modeState = game.mode_state || {};
+    applyModeTheme(gameMode);
 
     const state = gameMode === 'eliminatie' ? { eliminated: false } : {};
     const { data: player } = await sb.from('players').insert({ game_id: gameId, name: playerName, score: 0, state }).select().single();
@@ -413,6 +415,7 @@ function handleGameChange(payload) {
     if (!game) return;
     gameMode = game.mode || 'standard';
     modeState = game.mode_state || {};
+    applyModeTheme(gameMode);
     if (game.status === 'active') {
         currentQuestionIndex = game.current_question || 0;
         document.getElementById('host-lobby').classList.add('hidden');
@@ -519,6 +522,7 @@ async function awardOpenPoints(answerId, current) {
 async function startGame() {
     await loadQuestions();
     if (questions.length === 0) { alert('Voeg minstens 1 vraag toe.'); return; }
+    applyModeTheme(gameMode);
     currentQuestionIndex = 0;
     const update = { status:'active', current_question:0 };
     if (gameMode === 'rush') {
@@ -999,6 +1003,29 @@ function startGlobalTimer(context) {
     }, 200);
 }
 
+// ==================== MODE THEMES ====================
+
+function applyModeTheme(mode) {
+    const themes = {
+        crypto:  { primary: '#00ff41', bg_start: '#0a0a0a', bg_end: '#003300' },
+        tijdbom: { primary: '#ff6b35', bg_start: '#1a0000', bg_end: '#4a0000' },
+        snelle:  { primary: '#ffd700', bg_start: '#1a1a00', bg_end: '#3a3000' },
+        eliminatie: { primary: '#8e44ad', bg_start: '#0a000a', bg_end: '#2a002a' },
+        rush:    { primary: '#00d4ff', bg_start: '#000a1a', bg_end: '#002a4a' },
+    };
+    const t = themes[mode];
+    if (t) {
+        document.body.setAttribute('data-mode', mode);
+        document.documentElement.style.setProperty('--primary', t.primary);
+        document.documentElement.style.setProperty('--bg-start', t.bg_start);
+        document.documentElement.style.setProperty('--bg-end', t.bg_end);
+        document.body.style.background = `linear-gradient(135deg, ${t.bg_start}, ${t.bg_end})`;
+    } else {
+        document.body.removeAttribute('data-mode');
+        applySkin();
+    }
+}
+
 // ==================== MODE HELPERS ====================
 
 function startTimer(context) {
@@ -1135,6 +1162,7 @@ function resetQuiz() {
     window._globalTimerRunning = false;
     gameId=null; playerId=null; gameCode=null; currentQuestionIndex=0; playerAnswered=false; questions=[]; editingQuestionId=null;
     gameMode='standard'; modeState={};
+    applyModeTheme('standard');
     document.getElementById('modeSelect').value = 'standard';
     document.getElementById('host-setup').classList.remove('hidden');
     document.getElementById('host-lobby').classList.add('hidden');
