@@ -57,7 +57,7 @@ function onModeChange() {
         tijdbom: '⏱️ Tijdbom: globale tijdslimiet, 1 punt per goed antwoord, bij fout 3s lockout, minste goede antwoorden verliest',
         snelle: '⚡ Snelle Vingers: snelste goede antwoord krijgt meeste punten',
         eliminatie: '💀 Eliminatie: laagste score wordt geëlimineerd na elke vraag',
-        rush: '🚀 Rush: alle vragen tegelijk zichtbaar, beantwoord in willekeurige volgorde'
+        rush: '🚀 Rush: alle vragen tegelijk zichtbaar, beantwoord in willekeurige volgorde. Eindstand: wie alles goed heeft en het snelst klaar is wint!'
     };
     desc.textContent = descriptions[mode] || '';
 }
@@ -1068,7 +1068,43 @@ async function endGame() {
     await sb.from('games').update({ status:'finished' }).eq('id', gameId);
 }
 
+async function buildRushStandings() {
+    const { data: players } = await sb.from('players').select('*').eq('game_id', gameId);
+    const { data: answers } = await sb.from('answers').select('*').eq('game_id', gameId).order('created_at', { ascending: true });
+    if (!players) return [];
+
+    const totalQ = questions.length;
+    const playerStats = players.map(p => {
+        const pAnswers = (answers || []).filter(a => a.player_id === p.id);
+        const correct = pAnswers.filter(a => a.correct).length;
+        const wrong = pAnswers.filter(a => !a.correct).length;
+        const lastTime = pAnswers.length > 0 ? Math.max(...pAnswers.map(a => new Date(a.created_at).getTime())) : Infinity;
+        const allCorrect = correct === totalQ && pAnswers.length === totalQ;
+        return { ...p, correct, wrong, lastTime, allCorrect, answered: pAnswers.length };
+    });
+
+    playerStats.sort((a, b) => {
+        // All correct first, sorted by completion time
+        if (a.allCorrect && !b.allCorrect) return -1;
+        if (!a.allCorrect && b.allCorrect) return 1;
+        if (a.allCorrect && b.allCorrect) return a.lastTime - b.lastTime;
+        // Then by correct count desc
+        if (a.correct !== b.correct) return b.correct - a.correct;
+        // Then by completion time (faster = lower lastTime)
+        return (a.lastTime || Infinity) - (b.lastTime || Infinity);
+    });
+    return { playerStats, totalQ };
+}
+
 async function showFinalStandings() {
+    if (gameMode === 'rush') {
+        const { playerStats, totalQ } = await buildRushStandings();
+        document.getElementById('final-standings').innerHTML = playerStats.map((x,i) => {
+            const label = x.allCorrect ? '✅ ' + totalQ + '/' + totalQ : x.correct + '/' + totalQ + ' ✅';
+            return '<div class="standing-row"><span class="rank">#'+(i+1)+'</span><span class="name">'+x.name+'</span><span class="score">'+label+'</span></div>';
+        }).join('');
+        return;
+    }
     const { data: p } = await sb.from('players').select('*').eq('game_id',gameId).order('score',{ascending:false});
     if (!p) return;
     const ptsLabel = gameMode === 'tijdbom' ? '✅' : 'pts';
@@ -1078,6 +1114,16 @@ async function showFinalStandings() {
 }
 
 async function showPlayerStandings() {
+    if (gameMode === 'rush') {
+        const { playerStats, totalQ } = await buildRushStandings();
+        const me = playerStats.find(x => x.id === playerId);
+        document.getElementById('play-final-score').textContent = me ? 'Jouw score: ' + me.correct + '/' + totalQ + ' goed' : 'Quiz afgelopen!';
+        document.getElementById('play-standings').innerHTML = playerStats.map((x,i) => {
+            const label = x.allCorrect ? '✅ ' + totalQ + '/' + totalQ : x.correct + '/' + totalQ + ' ✅';
+            return '<div class="standing-row"><span class="rank">#'+(i+1)+'</span><span class="name">'+x.name+'</span><span class="score">'+label+'</span></div>';
+        }).join('');
+        return;
+    }
     const { data: p } = await sb.from('players').select('*').eq('game_id',gameId).order('score',{ascending:false});
     if (!p) return;
     const me = p.find(x => x.id === playerId);
