@@ -1077,20 +1077,12 @@ async function buildRushStandings() {
     const playerStats = players.map(p => {
         const pAnswers = (answers || []).filter(a => a.player_id === p.id);
         const correct = pAnswers.filter(a => a.correct).length;
-        const wrong = pAnswers.filter(a => !a.correct).length;
         const lastTime = pAnswers.length > 0 ? Math.max(...pAnswers.map(a => new Date(a.created_at).getTime())) : Infinity;
-        const allCorrect = correct === totalQ && pAnswers.length === totalQ;
-        return { ...p, correct, wrong, lastTime, allCorrect, answered: pAnswers.length };
+        return { ...p, correct, lastTime, answered: pAnswers.length };
     });
 
     playerStats.sort((a, b) => {
-        // All correct first, sorted by completion time
-        if (a.allCorrect && !b.allCorrect) return -1;
-        if (!a.allCorrect && b.allCorrect) return 1;
-        if (a.allCorrect && b.allCorrect) return a.lastTime - b.lastTime;
-        // Then by correct count desc
         if (a.correct !== b.correct) return b.correct - a.correct;
-        // Then by completion time (faster = lower lastTime)
         return (a.lastTime || Infinity) - (b.lastTime || Infinity);
     });
     return { playerStats, totalQ };
@@ -1100,8 +1092,7 @@ async function showFinalStandings() {
     if (gameMode === 'rush') {
         const { playerStats, totalQ } = await buildRushStandings();
         document.getElementById('final-standings').innerHTML = playerStats.map((x,i) => {
-            const label = x.allCorrect ? '✅ ' + totalQ + '/' + totalQ : x.correct + '/' + totalQ + ' ✅';
-            return '<div class="standing-row"><span class="rank">#'+(i+1)+'</span><span class="name">'+x.name+'</span><span class="score">'+label+'</span></div>';
+            return '<div class="standing-row"><span class="rank">#'+(i+1)+'</span><span class="name">'+x.name+'</span><span class="score">'+x.correct+'/'+totalQ+' ✅</span></div>';
         }).join('');
         return;
     }
@@ -1119,8 +1110,7 @@ async function showPlayerStandings() {
         const me = playerStats.find(x => x.id === playerId);
         document.getElementById('play-final-score').textContent = me ? 'Jouw score: ' + me.correct + '/' + totalQ + ' goed' : 'Quiz afgelopen!';
         document.getElementById('play-standings').innerHTML = playerStats.map((x,i) => {
-            const label = x.allCorrect ? '✅ ' + totalQ + '/' + totalQ : x.correct + '/' + totalQ + ' ✅';
-            return '<div class="standing-row"><span class="rank">#'+(i+1)+'</span><span class="name">'+x.name+'</span><span class="score">'+label+'</span></div>';
+            return '<div class="standing-row"><span class="rank">#'+(i+1)+'</span><span class="name">'+x.name+'</span><span class="score">'+x.correct+'/'+totalQ+' ✅</span></div>';
         }).join('');
         return;
     }
