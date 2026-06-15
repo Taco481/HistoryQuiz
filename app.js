@@ -21,6 +21,8 @@ let gameId = null, playerId = null, gameCode = null, playerName = null, hostName
 let currentQuestionIndex = 0, playerAnswered = false, supabaseChannel = null;
 let questions = [], editingQuestionId = null, hostParticipates = true;
 let currentUser = null;
+let gameMode = 'standard', modeState = {};
+let timerInterval = null;
 
 function goHome() {
     if (currentUser) {
@@ -44,6 +46,20 @@ function onQuestionTypeChange() {
     document.getElementById('q-options-group').classList.toggle('hidden', t !== 'multiple');
     document.getElementById('q-truefalse-group').classList.toggle('hidden', t !== 'truefalse');
     document.getElementById('q-open-group').classList.toggle('hidden', t !== 'open');
+}
+
+function onModeChange() {
+    const mode = document.getElementById('modeSelect').value;
+    const desc = document.getElementById('modeDescription');
+    const descriptions = {
+        standard: 'Standaard: klassiek vragen beantwoorden, meeste punten wint',
+        crypto: '🔐 Crypto Heist: crypto-wachtwoord nodig, eerste goede antwoord krijgt bonus',
+        tijdbom: '⏱️ Tijdbom: beantwoord elke vraag binnen de tijdslimiet',
+        snelle: '⚡ Snelle Vingers: snelste goede antwoord krijgt meeste punten',
+        eliminatie: '💀 Eliminatie: laagste score wordt geëlimineerd na elke vraag',
+        rush: '🚀 Rush: alle vragen tegelijk zichtbaar, beantwoord in willekeurige volgorde'
+    };
+    desc.textContent = descriptions[mode] || '';
 }
 
 // ==================== AUTH ====================
@@ -117,6 +133,12 @@ async function logout() {
     const saved = localStorage.getItem('hq_user');
     if (saved) await onAuth(JSON.parse(saved));
 })();
+
+let joinCheckTimer;
+document.getElementById('join-code').addEventListener('input', () => {
+    clearTimeout(joinCheckTimer);
+    joinCheckTimer = setTimeout(checkJoinGameMode, 400);
+});
 
 // ==================== SHOP ====================
 
@@ -244,10 +266,22 @@ async function createGame() {
     hostName = document.getElementById('host-name').value.trim();
     if (!hostName) { alert('Voer je naam in.'); return; }
     hostParticipates = document.getElementById('host-participate').checked;
+    gameMode = document.getElementById('modeSelect').value;
     const code = generateCode();
 
+    let mode_state = {};
+    if (gameMode === 'crypto') {
+        const pw = prompt('Stel een crypto-wachtwoord in voor spelers:') || 'crypto'+Math.random().toString(36).slice(2,6);
+        mode_state.crypto_password = pw;
+        alert('Crypto wachtwoord: ' + pw + '\nDeel dit met spelers zodat ze kunnen joinen.');
+    }
+    if (gameMode === 'tijdbom') {
+        const secs = parseInt(prompt('Tijdslimiet per vraag in seconden (10-60):') || '20');
+        mode_state.timer_seconds = Math.max(10, Math.min(60, secs || 20));
+    }
+
     try {
-        const { data: game, error } = await sb.from('games').insert({ code, status: 'waiting', host_id: currentUser?.id }).select().single();
+        const { data: game, error } = await sb.from('games').insert({ code, status: 'waiting', host_id: currentUser?.id, mode: gameMode, mode_state }).select().single();
         if (error) { logError('Aanmaken mislukt', error); alert('Fout: '+error.message); return; }
         gameId = game.id; gameCode = code;
 
@@ -348,6 +382,15 @@ async function deleteQuestion(id) {
     if (r) for (let i=0;i<r.length;i++) await sb.from('questions').update({question_index:i}).eq('id',r[i].id);
 }
 
+async function checkJoinGameMode() {
+    const code = document.getElementById('join-code').value.trim().toUpperCase();
+    const cryptoGroup = document.getElementById('crypto-password-group');
+    if (!code || code.length !== 6) { cryptoGroup.classList.add('hidden'); return; }
+    const { data: game } = await sb.from('games').select('mode').eq('code', code).maybeSingle();
+    if (game && game.mode === 'crypto') cryptoGroup.classList.remove('hidden');
+    else cryptoGroup.classList.add('hidden');
+}
+
 async function joinGame() {
     if (!supabaseAvailable) { alert('Supabase niet beschikbaar.'); return; }
     playerName = document.getElementById('join-name').value.trim();
@@ -358,9 +401,16 @@ async function joinGame() {
     const { data: game } = await sb.from('games').select('*').eq('code', code).single();
     if (!game) { alert('Quiz niet gevonden.'); return; }
     if (game.status === 'finished') { alert('Deze quiz is al afgelopen.'); return; }
-    gameId = game.id; gameCode = code;
+    gameId = game.id; gameCode = code; gameMode = game.mode || 'standard';
+    modeState = game.mode_state || {};
 
-    const { data: player } = await sb.from('players').insert({ game_id: gameId, name: playerName, score: 0 }).select().single();
+    if (gameMode === 'crypto') {
+        const pw = document.getElementById('join-crypto-password').value.trim();
+        if (pw !== modeState.crypto_password) { alert('Crypto wachtwoord onjuist!'); return; }
+    }
+
+    const state = gameMode === 'eliminatie' ? { eliminated: false } : {};
+    const { data: player } = await sb.from('players').insert({ game_id: gameId, name: playerName, score: 0, state }).select().single();
     if (!player) { alert('Fout bij joinen.'); return; }
     playerId = player.id;
     subscribeToGame();
@@ -386,6 +436,8 @@ function subscribeToGame() {
 function handleGameChange(payload) {
     const game = payload.new;
     if (!game) return;
+    gameMode = game.mode || 'standard';
+    modeState = game.mode_state || {};
     if (game.status === 'active') {
         currentQuestionIndex = game.current_question || 0;
         document.getElementById('host-lobby').classList.add('hidden');
@@ -422,7 +474,13 @@ async function awardHostCoins() {
 }
 
 async function handlePlayerChange() { await updatePlayerList(); await updateLeaderboard(); await updateAnswerStatus(); }
-async function handleAnswerChange() { await updateAnswerStatus(); await updateLeaderboard(); await loadOpenAnswers(); }
+async function handleAnswerChange() {
+    await updateAnswerStatus(); await updateLeaderboard(); await loadOpenAnswers();
+    if (gameMode === 'rush') {
+        if (!document.getElementById('play-lobby').classList.contains('hidden')) return;
+        renderRushPlayerNav();
+    }
+}
 
 async function updatePlayerList() {
     const { data: p } = await sb.from('players').select('*').eq('game_id', gameId);
@@ -436,9 +494,17 @@ async function updateLeaderboard() {
     const board = document.getElementById('host-scoreboard');
     if (!board) return;
     const isActive = !document.getElementById('host-game').classList.contains('hidden');
-    board.innerHTML = isActive
-        ? p.map((x,i) => '<div class="leaderboard-row"><span class="lb-rank">#'+(i+1)+'</span><span class="lb-name">'+x.name+'</span><span class="lb-score">'+x.score+' pts</span></div>').join('')
-        : p.map(x => '<span class="score-chip">'+x.name+': '+x.score+'</span>').join('');
+    if (gameMode === 'eliminatie') {
+        const elimPlayers = p.filter(x => x.state?.eliminated).map(x => x.name);
+        board.innerHTML = (isActive ? p.map((x,i) => {
+            const isElim = x.state?.eliminated;
+            return '<div class="leaderboard-row '+(isElim?'eliminated':'')+'"><span class="lb-rank">#'+(i+1)+'</span><span class="lb-name">'+x.name+(isElim?' 💀':'')+'</span><span class="lb-score">'+x.score+' pts</span></div>';
+        }).join('') : p.map(x => '<span class="score-chip">'+x.name+': '+x.score+(x.state?.eliminated?' 💀':'')+'</span>').join(''));
+    } else {
+        board.innerHTML = isActive
+            ? p.map((x,i) => '<div class="leaderboard-row"><span class="lb-rank">#'+(i+1)+'</span><span class="lb-name">'+x.name+'</span><span class="lb-score">'+x.score+' pts</span></div>').join('')
+            : p.map(x => '<span class="score-chip">'+x.name+': '+x.score+'</span>').join('');
+    }
 }
 
 async function updateAnswerStatus() {
@@ -479,7 +545,11 @@ async function startGame() {
     await loadQuestions();
     if (questions.length === 0) { alert('Voeg minstens 1 vraag toe.'); return; }
     currentQuestionIndex = 0;
-    await sb.from('games').update({ status:'active', current_question:0 }).eq('id', gameId);
+    const update = { status:'active', current_question:0 };
+    if (gameMode === 'rush') {
+        update.mode_state = { rush_unlocked: questions.map(() => true) };
+    }
+    await sb.from('games').update(update).eq('id', gameId);
     document.getElementById('host-lobby').classList.add('hidden');
     document.getElementById('host-game').classList.remove('hidden');
     showHostQuestion(0);
@@ -494,6 +564,26 @@ function showHostQuestion(index) {
 
     const ho = document.getElementById('host-options');
     const ha = document.getElementById('host-open-answers');
+    const timerEl = document.getElementById('host-timer');
+    const navEl = document.getElementById('rush-host-nav');
+
+    if (gameMode === 'rush') {
+        renderRushHostNav();
+        document.getElementById('btn-next-question').textContent = 'Quiz Beëindigen';
+        document.getElementById('btn-next-question').onclick = endGame;
+    } else {
+        const btnLabel = index < questions.length - 1 ? 'Volgende Vraag' : 'Bekijk Resultaten';
+        document.getElementById('btn-next-question').textContent = btnLabel;
+        document.getElementById('btn-next-question').onclick = nextQuestion;
+    }
+
+    if (gameMode === 'tijdbom') {
+        timerEl.classList.remove('hidden');
+        startTimer('host');
+    } else {
+        timerEl.classList.add('hidden');
+        clearInterval(timerInterval);
+    }
 
     if (q.type === 'open') {
         ho.classList.add('hidden'); ho.innerHTML = '';
@@ -504,7 +594,6 @@ function showHostQuestion(index) {
         const lbl = q.type === 'truefalse' ? ['Waar','Niet waar'] : ['A','B','C','D'];
         ho.innerHTML = (q.options||[]).map((o,i) => '<button class="option-btn" disabled>'+lbl[i]+'. '+o+'</button>').join('');
     }
-    document.getElementById('btn-next-question').textContent = index < questions.length-1 ? 'Volgende Vraag' : 'Bekijk Resultaten';
 }
 
 async function showPlayerQuestion(index) {
@@ -515,6 +604,38 @@ async function showPlayerQuestion(index) {
     document.getElementById('play-question-text').textContent = q.question;
     document.getElementById('play-feedback').classList.add('hidden');
     document.getElementById('play-feedback').textContent = '';
+
+    const timerEl = document.getElementById('play-timer');
+    const rushNav = document.getElementById('rush-question-nav');
+
+    if (gameMode === 'rush') {
+        rushNav.classList.remove('hidden');
+        rushNav.style.display = 'flex';
+        renderRushPlayerNav();
+    } else {
+        rushNav.classList.add('hidden');
+        rushNav.innerHTML = '';
+    }
+
+    if (gameMode === 'tijdbom') {
+        timerEl.classList.remove('hidden');
+        startTimer('player');
+    } else {
+        timerEl.classList.add('hidden');
+        clearInterval(timerInterval);
+    }
+
+    // Check if player is eliminated (Eliminatie mode)
+    if (gameMode === 'eliminatie') {
+        const { data: p } = await sb.from('players').select('state').eq('id', playerId).single();
+        if (p?.state?.eliminated) {
+            document.getElementById('play-question-text').textContent = 'Je bent geëlimineerd!';
+            document.getElementById('play-options').classList.add('hidden');
+            document.getElementById('play-options').innerHTML = '';
+            document.getElementById('play-open-input').classList.add('hidden');
+            return;
+        }
+    }
 
     const po = document.getElementById('play-options');
     const pi = document.getElementById('play-open-input');
@@ -551,13 +672,38 @@ async function showPlayerQuestion(index) {
 }
 
 async function submitAnswer(index) {
-    if (playerAnswered || !sb || currentQuestionIndex >= questions.length) return;
-    playerAnswered = true;
+    if (!sb || currentQuestionIndex >= questions.length) return;
+    // In Rush mode, check per-question; otherwise use global flag
+    if (gameMode !== 'rush') {
+        if (playerAnswered) return;
+        playerAnswered = true;
+    } else {
+        // Rush: check if already answered this question
+        const { data: ex } = await sb.from('answers').select('id').eq('game_id',gameId).eq('player_id',playerId).eq('question_index',currentQuestionIndex).maybeSingle();
+        if (ex) return;
+    }
+    // Check elimination
+    if (gameMode === 'eliminatie') {
+        const { data: p } = await sb.from('players').select('state').eq('id', playerId).single();
+        if (p?.state?.eliminated) return;
+    }
     const q = questions[currentQuestionIndex];
     const correct = index === parseInt(q.answer);
-    const pts = correct ? 10 : 0;
+
+    let pts = correct ? 10 : 0;
+    // Crypto Heist bonus for first correct answer
+    if (correct && gameMode === 'crypto') {
+        pts = 15;
+    }
+    // Snelle Vingers: points based on answer position
+    if (correct && gameMode === 'snelle') {
+        const { data: an } = await sb.from('answers').select('id').eq('game_id', gameId).eq('question_index', currentQuestionIndex).eq('correct', true);
+        const pos = an ? an.length : 0;
+        pts = pos === 0 ? 15 : pos === 1 ? 12 : pos === 2 ? 10 : 8;
+    }
+
     await sb.from('answers').insert({ game_id:gameId, player_id:playerId, question_index:currentQuestionIndex, answer:String(index), correct });
-    if (correct) {
+    if (correct && pts > 0) {
         const { data: c } = await sb.from('players').select('score').eq('id',playerId).single();
         if (c) await sb.from('players').update({ score: c.score + pts }).eq('id',playerId);
     }
@@ -566,18 +712,31 @@ async function submitAnswer(index) {
         if (i === index) b.classList.add(correct?'correct':'wrong');
         if (i === parseInt(q.answer)) b.classList.add('correct');
     });
-    document.getElementById('play-feedback').textContent = correct ? 'Goed! +10 punten' : 'Het antwoord was: '+(q.options?.[parseInt(q.answer)]||q.answer);
+    const ptsMsg = gameMode === 'crypto' && correct ? ' +15' : (gameMode === 'snelle' && correct ? ' +'+pts : correct ? ' +10' : '');
+    document.getElementById('play-feedback').textContent = correct ? 'Goed!'+ptsMsg+' punten' : 'Het antwoord was: '+(q.options?.[parseInt(q.answer)]||q.answer);
     document.getElementById('play-feedback').className = correct ? 'correct' : 'wrong';
     document.getElementById('play-feedback').classList.remove('hidden');
     await updatePlayerScore();
 }
 
 async function submitOpenAnswer() {
-    if (playerAnswered || !sb) return;
+    if (!sb) return;
+    if (gameMode !== 'rush') {
+        if (playerAnswered) return;
+        playerAnswered = true;
+    } else {
+        const { data: ex } = await sb.from('answers').select('id').eq('game_id',gameId).eq('player_id',playerId).eq('question_index',currentQuestionIndex).maybeSingle();
+        if (ex) return;
+    }
+    // Check elimination
+    if (gameMode === 'eliminatie') {
+        const { data: p } = await sb.from('players').select('state').eq('id', playerId).single();
+        if (p?.state?.eliminated) return;
+    }
     const inp = document.getElementById('play-open-answer');
     const a = inp.value.trim();
     if (!a) { alert('Typ een antwoord.'); return; }
-    playerAnswered = true;
+    if (gameMode !== 'rush') playerAnswered = true;
     await sb.from('answers').insert({ game_id:gameId, player_id:playerId, question_index:currentQuestionIndex, answer:a, correct:false });
     document.getElementById('play-open-input').classList.add('hidden');
     document.getElementById('play-feedback').textContent = 'Antwoord verzonden! De host beoordeelt het.';
@@ -592,6 +751,13 @@ async function updatePlayerScore() {
 }
 
 async function nextQuestion() {
+    // Eliminatie: eliminate lowest-scoring player(s) before next question
+    if (gameMode === 'eliminatie') {
+        await doElimination();
+        // Check if only 1 player left
+        const { data: active } = await sb.from('players').select('*').eq('game_id', gameId).filter('state->>eliminated', 'eq', 'false');
+        if (active && active.length <= 1) { await endGame(); return; }
+    }
     const n = currentQuestionIndex + 1;
     if (n >= questions.length) { await endGame(); return; }
     currentQuestionIndex = n;
@@ -599,7 +765,81 @@ async function nextQuestion() {
     showHostQuestion(n);
 }
 
+async function doElimination() {
+    const { data: players } = await sb.from('players').select('*').eq('game_id', gameId).filter('state->>eliminated', 'eq', 'false');
+    if (!players || players.length <= 1) return;
+    const minScore = Math.min(...players.map(p => p.score));
+    for (const p of players) {
+        if (p.score === minScore) {
+            await sb.from('players').update({ state: { eliminated: true } }).eq('id', p.id);
+        }
+    }
+}
+
+// ==================== MODE HELPERS ====================
+
+function startTimer(context) {
+    clearInterval(timerInterval);
+    const secs = modeState.timer_seconds || 20;
+    let remaining = secs;
+    const elId = context === 'host' ? 'host-timer' : 'play-timer';
+    const el = document.getElementById(elId);
+    if (!el) return;
+    el.textContent = '⏱️ ' + remaining + 's';
+    timerInterval = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+            clearInterval(timerInterval);
+            el.textContent = '⏱️ 0s';
+            if (context === 'player' && !playerAnswered) {
+                playerAnswered = true;
+                document.querySelectorAll('#play-options .option-btn').forEach(b => b.disabled = true);
+                document.getElementById('play-feedback').textContent = 'Tijd op! ⏰';
+                document.getElementById('play-feedback').className = 'wrong';
+                document.getElementById('play-feedback').classList.remove('hidden');
+            }
+        } else {
+            el.textContent = '⏱️ ' + remaining + 's';
+        }
+    }, 1000);
+}
+
+function renderRushHostNav() {
+    const nav = document.getElementById('rush-host-nav');
+    if (!nav) return;
+    nav.innerHTML = questions.map((q, i) => {
+        const isCurrent = i === currentQuestionIndex;
+        return `<button class="btn ${isCurrent ? 'primary' : 'secondary'} small" onclick="rushHostGoTo(${i})">${i + 1}</button>`;
+    }).join('');
+    nav.classList.remove('hidden');
+}
+
+async function renderRushPlayerNav() {
+    const nav = document.getElementById('rush-question-nav');
+    if (!nav) return;
+    const { data: answers } = await sb.from('answers').select('question_index,correct').eq('game_id', gameId).eq('player_id', playerId);
+    const answered = answers ? new Map(answers.map(a => [a.question_index, a.correct])) : new Map();
+    nav.innerHTML = questions.map((q, i) => {
+        const status = answered.has(i) ? (answered.get(i) ? '✅' : '❌') : '⬜';
+        return `<button class="btn secondary small" onclick="rushPlayerGoTo(${i})">${status} ${i + 1}</button>`;
+    }).join('');
+    nav.classList.remove('hidden');
+}
+
+function rushHostGoTo(index) {
+    if (index >= questions.length) return;
+    currentQuestionIndex = index;
+    showHostQuestion(index);
+}
+
+function rushPlayerGoTo(index) {
+    if (index >= questions.length) return;
+    currentQuestionIndex = index;
+    showPlayerQuestion(index);
+}
+
 async function endGame() {
+    clearInterval(timerInterval);
     await sb.from('games').update({ status:'finished' }).eq('id', gameId);
 }
 
@@ -628,11 +868,16 @@ async function cancelGame() {
 
 function resetQuiz() {
     if (supabaseChannel) supabaseChannel.unsubscribe();
+    clearInterval(timerInterval);
     gameId=null; playerId=null; gameCode=null; currentQuestionIndex=0; playerAnswered=false; questions=[]; editingQuestionId=null;
+    gameMode='standard'; modeState={};
+    document.getElementById('modeSelect').value = 'standard';
     document.getElementById('host-setup').classList.remove('hidden');
     document.getElementById('host-lobby').classList.add('hidden');
     document.getElementById('host-game').classList.add('hidden');
     document.getElementById('host-result').classList.add('hidden');
     document.getElementById('earnings-msg').classList.add('hidden');
+    document.getElementById('rush-host-nav').classList.add('hidden');
+    document.getElementById('rush-question-nav').classList.add('hidden');
     showView('home');
 }

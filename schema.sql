@@ -42,6 +42,17 @@ DO $$ BEGIN
   ALTER TABLE questions ADD COLUMN IF NOT EXISTS game_id UUID;
 EXCEPTION WHEN undefined_table THEN null; END $$;
 
+-- ==================== MIGRATIE (spelmodes) ====================
+DO $$ BEGIN
+  ALTER TABLE games ADD COLUMN IF NOT EXISTS mode VARCHAR(20) DEFAULT 'standard';
+EXCEPTION WHEN undefined_table THEN null; END $$;
+DO $$ BEGIN
+  ALTER TABLE games ADD COLUMN IF NOT EXISTS mode_state JSONB DEFAULT '{}'::jsonb;
+EXCEPTION WHEN undefined_table THEN null; END $$;
+DO $$ BEGIN
+  ALTER TABLE players ADD COLUMN IF NOT EXISTS state JSONB DEFAULT '{}'::jsonb;
+EXCEPTION WHEN undefined_table THEN null; END $$;
+
 -- ==================== GAMES ====================
 CREATE TABLE IF NOT EXISTS games (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,

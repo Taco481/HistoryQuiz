@@ -50,7 +50,7 @@ nav {
     line-height: 1.6;
 }
 
-input[type="text"] {
+input[type="text"], input[type="password"] {
     width: 100%;
     padding: 12px 16px;
     margin: 8px 0;
@@ -63,7 +63,7 @@ input[type="text"] {
     transition: border 0.2s;
 }
 
-input[type="text"]:focus {
+input[type="text"]:focus, input[type="password"]:focus {
     border-color: #e94560;
 }
 
@@ -684,6 +684,25 @@ hr { border: none; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 16px 
 }
 
 #saved-quiz-select select option { background: #1a1a2e; color: #fff; }
+
+/* Mode selector */
+#modeSelect {
+    width: 100%;
+    padding: 10px 14px;
+    margin: 8px 0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    font-size: 0.95rem;
+    cursor: pointer;
+}
+#modeSelect option { background: #1a1a2e; color: #fff; }
+.hint { color: #888; font-size: 0.85rem; }
+
+/* Eliminatie */
+.leaderboard-row.eliminated { opacity: 0.4; text-decoration: line-through; }
+.leaderboard-row.eliminated .lb-name { color: #666; }
 
 /* Responsive */
 @media (max-width: 500px) {
