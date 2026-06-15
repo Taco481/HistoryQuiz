@@ -18,6 +18,29 @@ EXCEPTION WHEN undefined_table THEN null; END $$;
 DO $$ BEGIN
   ALTER TABLE games ADD COLUMN IF NOT EXISTS host_id UUID;
 EXCEPTION WHEN undefined_table THEN null; END $$;
+DO $$ BEGIN
+  ALTER TABLE games ADD COLUMN IF NOT EXISTS current_question INT DEFAULT 0;
+EXCEPTION WHEN undefined_table THEN null; END $$;
+
+-- ==================== MIGRATIE (vragen tabel kolommen) ====================
+DO $$ BEGIN
+  ALTER TABLE questions ADD COLUMN IF NOT EXISTS type VARCHAR(20) DEFAULT 'multiple';
+EXCEPTION WHEN undefined_table THEN null; END $$;
+DO $$ BEGIN
+  ALTER TABLE questions ADD COLUMN IF NOT EXISTS question TEXT;
+EXCEPTION WHEN undefined_table THEN null; END $$;
+DO $$ BEGIN
+  ALTER TABLE questions ADD COLUMN IF NOT EXISTS options JSONB;
+EXCEPTION WHEN undefined_table THEN null; END $$;
+DO $$ BEGIN
+  ALTER TABLE questions ADD COLUMN IF NOT EXISTS answer TEXT;
+EXCEPTION WHEN undefined_table THEN null; END $$;
+DO $$ BEGIN
+  ALTER TABLE questions ADD COLUMN IF NOT EXISTS question_index INT;
+EXCEPTION WHEN undefined_table THEN null; END $$;
+DO $$ BEGIN
+  ALTER TABLE questions ADD COLUMN IF NOT EXISTS game_id UUID;
+EXCEPTION WHEN undefined_table THEN null; END $$;
 
 -- ==================== GAMES ====================
 CREATE TABLE IF NOT EXISTS games (
